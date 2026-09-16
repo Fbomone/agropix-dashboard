@@ -2,9 +2,9 @@
 
 Uso minimo en el archivo principal, despues de st.set_page_config():
 
-    from utils.auth import logout_button, requiere_login
+    from utils.auth import check_authentication, logout_button
 
-    requiere_login()          # corta la ejecucion si no hay sesion valida
+    usuario = check_authentication()   # corta la ejecucion si no hay sesion valida
     with st.sidebar:
         logout_button()
 
@@ -178,8 +178,12 @@ def cerrar_sesion(motivo: str = "logout") -> None:
         st.session_state.pop(clave, None)
 
 
-def check_authentication() -> bool:
-    """True si hay sesion valida. Cierra la sesion si paso el timeout de inactividad."""
+def sesion_valida() -> bool:
+    """True si hay sesion valida. Cierra la sesion si paso el timeout de inactividad.
+
+    Es la verificacion pura, sin dibujar nada: la porteria de la app es
+    check_authentication().
+    """
     if not st.session_state.get("auth_ok"):
         return False
     ultimo_uso = st.session_state.get("auth_ultimo_uso")
@@ -249,7 +253,7 @@ def _estilos() -> None:
 
 
 def login_page() -> None:
-    """Dibuja la pantalla de login. No corta la ejecucion: para eso esta requiere_login()."""
+    """Dibuja la pantalla de login. No corta la ejecucion: para eso esta check_authentication()."""
     _estilos()
     _, centro, _ = st.columns([1, 2, 1])
     with centro:
@@ -315,12 +319,16 @@ def login_page() -> None:
         )
 
 
-def requiere_login() -> dict[str, str]:
+def check_authentication() -> dict[str, str]:
     """Portero de la app: muestra el login y corta la ejecucion si no hay sesion valida.
 
-    Devuelve los datos del usuario cuando la sesion es valida.
+    Devuelve los datos del usuario logueado (email, nombre, rol), asi el archivo
+    principal puede usarlos en la bienvenida:
+
+        usuario = check_authentication()
+        st.caption(f"Bienvenido: {usuario['nombre']}")
     """
-    if not check_authentication():
+    if not sesion_valida():
         login_page()
         st.stop()
     return usuario_actual()  # type: ignore[return-value]

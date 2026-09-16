@@ -113,14 +113,14 @@ def sesion(monkeypatch):
 
 
 def test_sin_sesion_no_hay_acceso(sesion):
-    assert auth.check_authentication() is False
+    assert auth.sesion_valida() is False
     assert auth.usuario_actual() is None
 
 
 def test_sesion_activa_renueva_el_plazo(sesion):
     sesion.update(auth_ok=True, auth_ultimo_uso=datetime.now() - timedelta(minutes=29),
                   auth_email="dueno@agropix.com", auth_nombre="Dueño", auth_rol="admin")
-    assert auth.check_authentication() is True
+    assert auth.sesion_valida() is True
     assert datetime.now() - sesion["auth_ultimo_uso"] < timedelta(seconds=5)
     assert auth.usuario_actual()["rol"] == "admin"
 
@@ -128,14 +128,14 @@ def test_sesion_activa_renueva_el_plazo(sesion):
 def test_timeout_de_30_minutos_cierra_la_sesion(sesion):
     sesion.update(auth_ok=True, auth_email="dueno@agropix.com",
                   auth_ultimo_uso=datetime.now() - timedelta(minutes=31))
-    assert auth.check_authentication() is False
+    assert auth.sesion_valida() is False
     assert "auth_ok" not in sesion
     assert sesion["auth_aviso_timeout"] is True
 
 
 def test_sesion_sin_marca_de_tiempo_se_descarta(sesion):
     sesion.update(auth_ok=True, auth_email="x")  # session_state manipulado
-    assert auth.check_authentication() is False
+    assert auth.sesion_valida() is False
 
 
 def test_logout_borra_los_datos_del_cliente(sesion):

@@ -49,11 +49,22 @@ VENTAS_TAB = _cfg("VENTAS_TAB", "Ventas")
 
 COHERE_API_KEY = _cfg("COHERE_API_KEY")
 
-# SendGrid (envio automatico de reportes)
-SENDGRID_API_KEY = _cfg("SENDGRID_API_KEY")
-EMAIL_REMITENTE = _cfg("EMAIL_REMITENTE", "reportes@agropix.com")
+# SendGrid (envio automatico de reportes). Se aceptan las dos formas de secrets:
+# claves planas (SENDGRID_API_KEY) o la tabla [sendgrid] con api_key/from_email.
+def _sendgrid(clave: str) -> str:
+    try:
+        tabla = _secrets().get("sendgrid") or {}
+        return str(dict(tabla).get(clave, ""))
+    except Exception:
+        return ""
+
+
+SENDGRID_API_KEY = _cfg("SENDGRID_API_KEY") or _sendgrid("api_key")
+EMAIL_REMITENTE = _cfg("EMAIL_REMITENTE") or _sendgrid("from_email") or "reportes@agropix.com"
 EMAIL_DESTINATARIOS = [
-    d.strip() for d in _cfg("EMAIL_DESTINATARIOS").split(",") if d.strip()
+    d.strip()
+    for d in (_cfg("EMAIL_DESTINATARIOS") or _sendgrid("destinatarios")).split(",")
+    if d.strip()
 ]
 
 

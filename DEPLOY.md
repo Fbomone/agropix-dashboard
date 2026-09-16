@@ -5,7 +5,23 @@ Streamlit Community Cloud deploya repos privados en el plan gratis.
 
 ---
 
-## 1. Login: cómo están guardadas las contraseñas
+## 1. Login: cómo se usa y cómo están guardadas las contraseñas
+
+`app.py` sólo necesita dos líneas:
+
+```python
+from utils.auth import check_authentication, logout_button
+
+usuario = check_authentication()   # muestra el login y corta si no hay sesión
+with st.sidebar:
+    logout_button()
+```
+
+`check_authentication()` devuelve un dict con `email`, `nombre` y `rol`, que es
+lo que alimenta la línea de bienvenida del encabezado. La verificación pura, sin
+dibujar nada, es `sesion_valida()`.
+
+### Cómo están guardadas las contraseñas
 
 Las 3 contraseñas **no están en el repositorio**. `utils/auth.py` guarda, por
 usuario, un `salt` aleatorio y el hash PBKDF2-SHA256 de la contraseña
@@ -110,7 +126,9 @@ reinicio**. Si los precios tienen que persistir, hay que moverlos a un Sheet o
 a una DB.
 
 **Email (SendGrid).** El botón "Enviar por mail" aparece sólo si están los tres
-secrets (`SENDGRID_API_KEY`, `EMAIL_REMITENTE`, `EMAIL_DESTINATARIOS`). El
+secrets. Se aceptan dos formas equivalentes: claves planas
+(`SENDGRID_API_KEY`, `EMAIL_REMITENTE`, `EMAIL_DESTINATARIOS`) o la tabla
+`[sendgrid]` con `api_key` / `from_email` / `destinatarios`. El
 remitente tiene que estar verificado en SendGrid → *Settings → Sender
 Authentication*, sino la API devuelve 403 aunque la key sea válida. Plan gratis:
 100 mails/día. El envío es manual (un botón); un envío programado necesita un
@@ -122,13 +140,15 @@ scheduler externo, que Community Cloud no tiene.
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                                     # 72 tests; 9 se saltean
+pytest                                     # 89 tests; 10 se saltean
 
 # Incluyendo los que necesitan las contraseñas reales:
 AGROPIX_TEST_PASS_DUENO='...' AGROPIX_TEST_PASS_GERENTE='...' \
 AGROPIX_TEST_PASS_VENDEDOR='...' pytest
 ```
 
-`tests/test_auth.py` y `tests/test_email_sender.py` no tocan red.
-`tests/test_app_login.py` corre `app.py` de verdad con `AppTest` y verifica que
-sin sesión válida **no se lee Google Sheets**.
+Ningún test toca la red. `tests/test_app_login.py` corre `app.py` de verdad con
+`AppTest` y verifica que sin sesión válida **no se lee Google Sheets**.
+
+Verificado además contra los Sheets reales en local: login → dashboard con 11
+KPIs y 2 tablas → logout que vuelve al login y limpia los datos de la sesión.

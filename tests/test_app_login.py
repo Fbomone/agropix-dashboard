@@ -87,3 +87,7 @@ def test_login_valido_abre_la_sesion(monkeypatch):
     assert llamadas, "despues del login la app deberia intentar leer Sheets"
     # app.py atrapa el fallo de Sheets y muestra su propio mensaje
     assert any("No se pudo leer Google Sheets" in e.value for e in app.error)
+    # El encabezado se dibuja antes de leer Sheets, asi que esta igual
+    html = " ".join(b.body for b in app.get("html"))
+    assert "Bienvenido" in html and "Dueño" in html
+    assert "DATOS CONFIDENCIALES" in html

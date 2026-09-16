@@ -1,6 +1,6 @@
 import streamlit as st
 
-from utils.auth import logout_button, requiere_login
+from utils.auth import check_authentication, logout_button
 from utils.data import (
     ESTADOS_TRABAJO_EJECUTADO, aplicar_filtros, cantidad_alertas, cargar_crudos, cargar_precios,
     construir_datos, opciones_estado_trabajo, rango_fechas,
@@ -13,7 +13,7 @@ aplicar_tema()
 # Porteria: sin sesion valida no se declara la navegacion ni se toca Google Sheets.
 # Tiene que ir antes de cargar_crudos() para que los datos del cliente no se lean
 # (ni queden cacheados) en una sesion anonima.
-requiere_login()
+usuario = check_authentication()
 
 # Evita que st.metric corte los valores con "…" en columnas angostas
 st.html("""
@@ -23,6 +23,21 @@ st.html("""
 [data-testid="stMetricLabel"] { white-space: normal; }
 [data-testid="stMetricLabel"] p { white-space: normal; }
 </style>
+""")
+
+# Encabezado comun a todas las paginas. Va como franja compacta y no como
+# st.title() porque cada pagina ya trae su propio titulo: dos titulos apilados
+# en cada pantalla se leen peor que una linea de contexto.
+st.html(f"""
+<div style="display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:baseline;
+            border-left:4px solid #2E7D32;background:#F4F8F4;border-radius:4px;
+            padding:.55rem .8rem;margin-bottom:.75rem;font-size:.9rem">
+  <strong style="color:#2E7D32">📊 Dashboard Agropix</strong>
+  <span style="color:#B3261E;font-weight:600;letter-spacing:.03em">DATOS CONFIDENCIALES</span>
+  <span style="color:#5F6B7A;margin-left:auto">
+    Bienvenido: <strong>{usuario["nombre"]}</strong> · {usuario["email"]}
+  </span>
+</div>
 """)
 
 # La carpeta NO se llama "pages/": con ese nombre Streamlit activa la navegacion
@@ -143,3 +158,14 @@ with st.sidebar:
     logout_button()
 
 paginas.run()
+
+# Advertencia al pie, despues del contenido de la pagina activa
+st.divider()
+st.html("""
+<div style="background-color:#FFF3CD;border:1px solid #FFE08A;padding:12px;
+            border-radius:4px;font-size:.88rem;color:#5C4600">
+  <strong>⚠️ DATOS CONFIDENCIALES</strong><br>
+  Este dashboard contiene información de facturación de Agropix.
+  No compartir ni hacer screenshots sin autorización.
+</div>
+""")

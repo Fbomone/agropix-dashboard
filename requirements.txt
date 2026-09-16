@@ -20,4 +20,4 @@ kaleido>=1.4.0         # render de graficos Plotly a imagen (necesita Chromium, 
 
 # --- Config / email ---
 python-dotenv>=1.0
-sendgrid>=6.11         # envio automatico de reportes (plan gratis: 100 mails/dia)
+sendgrid>=6.10         # envio automatico de reportes (plan gratis: 100 mails/dia)
