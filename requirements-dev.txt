@@ -1,0 +1,3 @@
+# Solo para desarrollo local: pip install -r requirements-dev.txt
+-r requirements.txt
+pytest>=8.0

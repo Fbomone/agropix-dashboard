@@ -1,7 +1,11 @@
 venv/
 __pycache__/
 *.pyc
+.pytest_cache/
 .env
 credentials.json
 data/cache/
-.streamlit/
+data/auditoria.log
+# El tema (.streamlit/config.toml) SI se versiona para que viaje al deploy;
+# los secretos NO.
+.streamlit/secrets.toml

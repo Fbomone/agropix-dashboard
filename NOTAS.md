@@ -15,9 +15,13 @@
 - [ ] Filas 77 y 78 de Trabajos: fecha de contacto inválida
 
 ## Pendientes técnicos
-- [ ] Deploy (Render o Railway)
-- [ ] credentials.json como variable de entorno para el deploy
-- [ ] Envío automático por mail
+- [x] Deploy: Streamlit Community Cloud (ver DEPLOY.md)
+- [x] credentials.json via st.secrets[gcp_service_account] para el deploy
+- [x] Login privado con timeout de 30 min (utils/auth.py)
+- [x] Envío por mail con SendGrid (utils/email_sender.py) — manual, con botón
+- [ ] Envío *programado* por mail: Community Cloud no tiene scheduler
+- [ ] Precios de lista: persisten en JSON dentro del contenedor, se pierden al
+      reiniciar en Cloud. Mover a un Sheet o DB.
 - [ ] Chat con IA (fase 2)
 
 ## Setup local
@@ -25,3 +29,8 @@
 - Requiere credentials.json (service account de Google Cloud) en la raíz
 - Requiere .env con CRM_SHEET_ID, VENTAS_SHEET_ID, CRM_TAB, VENTAS_TAB
 - Correr: streamlit run app.py
+- Tests: pip install -r requirements-dev.txt && pytest
+
+## Accesos
+- La app pide login. Usuarios y rotación de contraseñas: DEPLOY.md
+- Las contraseñas se guardan hasheadas (PBKDF2); nunca en texto plano en el repo

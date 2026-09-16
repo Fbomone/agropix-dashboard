@@ -1,5 +1,6 @@
 import streamlit as st
 
+from utils.auth import logout_button, requiere_login
 from utils.data import (
     ESTADOS_TRABAJO_EJECUTADO, aplicar_filtros, cantidad_alertas, cargar_crudos, cargar_precios,
     construir_datos, opciones_estado_trabajo, rango_fechas,
@@ -8,6 +9,11 @@ from utils.ui import aplicar_tema
 
 st.set_page_config(page_title="Agropix Dashboard", page_icon="🌱", layout="wide")
 aplicar_tema()
+
+# Porteria: sin sesion valida no se declara la navegacion ni se toca Google Sheets.
+# Tiene que ir antes de cargar_crudos() para que los datos del cliente no se lean
+# (ni queden cacheados) en una sesion anonima.
+requiere_login()
 
 # Evita que st.metric corte los valores con "…" en columnas angostas
 st.html("""
@@ -118,7 +124,22 @@ with st.sidebar:
     if pdf and pdf["firma"] == firma_pdf:
         st.download_button("⬇️ Descargar PDF", data=pdf["bytes"], file_name=pdf["nombre"], mime="application/pdf",
                            on_click="ignore", type="primary", width="stretch")
+        # El boton de mail solo aparece si SendGrid esta configurado en los secrets
+        from utils.email_sender import ErrorEnvioEmail, configurado, enviar_reporte
+        mail_listo, mail_motivo = configurado()
+        if mail_listo and st.button("✉️ Enviar por mail", width="stretch", key="enviar_mail"):
+            periodo = f"{desde:%d/%m/%Y} a {hasta:%d/%m/%Y}" if desde and hasta else ""
+            with st.spinner("Enviando…"):
+                try:
+                    destinos = enviar_reporte(pdf["bytes"], pdf["nombre"], periodo=periodo)
+                    st.success(f"Enviado a {', '.join(destinos)}")
+                except ErrorEnvioEmail as e:
+                    st.error(str(e))
+        elif not mail_listo:
+            st.caption(f"✉️ Envío por mail no disponible: {mail_motivo}")
     elif pdf:
         st.caption("Cambiaron los filtros: volvé a exportar para actualizar el PDF.")
+
+    logout_button()
 
 paginas.run()

@@ -2,7 +2,7 @@ import gspread
 import pandas as pd
 from google.oauth2.service_account import Credentials
 
-from config.settings import CREDENTIALS_PATH
+from config.settings import CREDENTIALS_PATH, credenciales_google
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
@@ -12,13 +12,18 @@ SCOPES = [
 
 class GoogleSheetsConnector:
     def __init__(self):
-        if not CREDENTIALS_PATH.exists():
+        # En Streamlit Cloud la service account llega por st.secrets; en local,
+        # por credentials.json (que esta en .gitignore y nunca se sube).
+        info = credenciales_google()
+        if info:
+            creds = Credentials.from_service_account_info(info, scopes=SCOPES)
+        elif CREDENTIALS_PATH.exists():
+            creds = Credentials.from_service_account_file(str(CREDENTIALS_PATH), scopes=SCOPES)
+        else:
             raise FileNotFoundError(
-                f"No se encontro credentials.json en {CREDENTIALS_PATH}"
+                f"No hay credenciales de Google: falta {CREDENTIALS_PATH} y tampoco esta "
+                "[gcp_service_account] en los secrets de Streamlit."
             )
-        creds = Credentials.from_service_account_file(
-            str(CREDENTIALS_PATH), scopes=SCOPES
-        )
         self.gc = gspread.authorize(creds)
 
     def read_tab(self, sheet_id: str, tab_name: str) -> pd.DataFrame:
