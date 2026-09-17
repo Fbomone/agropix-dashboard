@@ -8,14 +8,23 @@ Uso minimo en el archivo principal, despues de st.set_page_config():
     with st.sidebar:
         logout_button()
 
-Decisiones de seguridad
------------------------
-- Las contrasenas NO viven en el repositorio: se guardan como hash PBKDF2-SHA256
-  con salt por usuario (240.000 iteraciones, hashlib de la stdlib). Un hash
-  filtrado no permite iniciar sesion ni recuperar la contrasena original.
-- La lista de usuarios se puede sobreescribir por completo desde
-  st.secrets["usuarios"], asi se rotan claves sin tocar el codigo ni volver a
-  deployar (ver .streamlit/secrets.toml.example).
+Donde viven las contrasenas
+---------------------------
+En NINGUN archivo del repositorio. Se leen de st.secrets["auth_users"], que es:
+
+- en local : .streamlit/secrets.toml, que esta en .gitignore y nunca se pushea
+- en Cloud : Settings -> Secrets, cifrados del lado de Streamlit
+
+Si esa seccion no existe, cargar_usuarios() devuelve {} y no entra nadie: no hay
+usuario de emergencia ni contrasena por defecto en el codigo.
+
+Las contrasenas se guardan tal cual (no hasheadas) porque asi se administran
+desde el panel de Streamlit Cloud sin herramientas extra. La consecuencia a
+tener presente: quien tenga acceso a ese panel las ve en claro, asi que no
+conviene reusar en Agropix una contrasena personal de otro servicio.
+
+Otras decisiones
+----------------
 - La sesion vive en st.session_state: es por pestania del navegador y muere al
   cerrarla o al refrescar. No se emiten cookies ni tokens persistentes.
 - HTTPS lo provee Streamlit Cloud; este modulo asume transporte cifrado.
@@ -24,8 +33,6 @@ El modulo no importa nada del proyecto: se puede copiar a otra app Streamlit.
 """
 from __future__ import annotations
 
-import base64
-import hashlib
 import hmac
 import logging
 import os
@@ -47,36 +54,18 @@ TIMEOUT_SESION = timedelta(minutes=30)   # inactividad tolerada antes del logout
 MAX_INTENTOS = 5                         # intentos fallidos antes del bloqueo
 BLOQUEO = timedelta(minutes=5)           # duracion del bloqueo por fuerza bruta
 
-ITERACIONES_PBKDF2 = 240_000
 ARCHIVO_AUDITORIA = Path(os.getenv("AGROPIX_AUDIT_LOG", "data/auditoria.log"))
 
-# Usuarios por defecto. `salt` y `hash` son base64; se generan con
-# `python -m utils.auth "NuevaPassword"` y se pegan aca o en st.secrets.
-USUARIOS_AUTORIZADOS: dict[str, dict[str, str]] = {
-    "dueno@agropix.com": {
-        "nombre": "Dueño",
-        "rol": "admin",
-        "salt": "6ID/4B6xrCK3xkU0xgYTrg==",
-        "hash": "bXgnz1q8kejoJ0jk7LsFlSsMzUk9EFIZN+9Gu1uofhk=",
-    },
-    "gerente@agropix.com": {
-        "nombre": "Gerencia",
-        "rol": "gerente",
-        "salt": "0evmkW8s/L7Fpb5qXglzCw==",
-        "hash": "SrmcBKq29iqbiZeZf0Vu1SQBFkEboy6NHSAz0JaBuuY=",
-    },
-    "vendedor@agropix.com": {
-        "nombre": "Ventas",
-        "rol": "vendedor",
-        "salt": "oAO98l0CL78hRyfKZbcnEQ==",
-        "hash": "cfiWh6ee3+6QV9e8o9TIalqex6GsRTZg3Xfibt+iAw8=",
-    },
-}
+SECCION_SECRETS = "auth_users"
 
-# "dueño@agropix.com" no es una direccion valida para la mayoria de los
-# servidores de correo (la parte local deberia ser ASCII) y es incomoda de
-# tipear, asi que el usuario canonico es "dueno@" y el alias con ñ tambien entra.
-ALIAS_USUARIOS = {"dueño@agropix.com": "dueno@agropix.com"}
+# Quien puede entrar. El valor es la clave dentro de [auth_users]: es el email
+# con "@" y "." cambiados por "_", porque TOML no los admite en una clave simple.
+# Para dar de alta a alguien: agregar la linea aca y su contrasena en los secrets.
+EMAILS_AUTORIZADOS: dict[str, str] = {
+    "francobomone14@gmail.com": "francobomone14_gmail_com",
+    "infoagropix@gmail.com": "infoagropix_gmail_com",
+    "matias21tossen@gmail.com": "matias21tossen_gmail_com",
+}
 
 # ---------------------------------------------------------------------------
 # Auditoria
@@ -106,59 +95,59 @@ def audit_log(evento: str, email: str = "-", detalle: str = "") -> None:
 # ---------------------------------------------------------------------------
 # Credenciales
 # ---------------------------------------------------------------------------
-def hash_password(password: str, salt: bytes) -> bytes:
-    """PBKDF2-SHA256 de `password` con `salt`."""
-    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, ITERACIONES_PBKDF2)
+def _seccion_secrets(nombre: str) -> dict:
+    """st.secrets[nombre] como dict, o {} si no hay secrets configurados.
 
-
-def generar_credencial(password: str) -> tuple[str, str]:
-    """Devuelve (salt_b64, hash_b64) listos para pegar en USUARIOS_AUTORIZADOS."""
-    salt = os.urandom(16)
-    return (
-        base64.b64encode(salt).decode(),
-        base64.b64encode(hash_password(password, salt)).decode(),
-    )
-
-
-def usuarios() -> dict[str, dict[str, str]]:
-    """Usuarios vigentes: los de st.secrets["usuarios"] si existen, sino los del codigo."""
+    Sin archivo de secrets Streamlit levanta excepcion en vez de devolver None,
+    de ahi el try/except.
+    """
     try:
-        desde_secrets = st.secrets.get("usuarios")
+        return dict(st.secrets.get(nombre) or {})
     except Exception:
-        # Sin secrets.toml Streamlit levanta excepcion en vez de devolver None
-        desde_secrets = None
-    if desde_secrets:
-        return {str(k).strip().lower(): dict(v) for k, v in dict(desde_secrets).items()}
-    return USUARIOS_AUTORIZADOS
+        return {}
+
+
+def cargar_usuarios() -> dict[str, str]:
+    """Usuarios autorizados desde Streamlit Secrets, como {email: contrasena}.
+
+    En local se leen de .streamlit/secrets.toml; en Streamlit Cloud, de
+    Settings -> Secrets. Los emails de EMAILS_AUTORIZADOS que no tengan
+    contrasena cargada quedan afuera, asi un secret a medio configurar no
+    habilita a nadie.
+
+    Se lee en cada rerun a proposito: cambiar un secret en Cloud tiene efecto
+    sin necesidad de un nuevo deploy.
+    """
+    seccion = _seccion_secrets(SECCION_SECRETS)
+    usuarios = {
+        email: str(seccion.get(clave, "") or "").strip()
+        for email, clave in EMAILS_AUTORIZADOS.items()
+    }
+    return {email: password for email, password in usuarios.items() if password}
 
 
 def normalizar_email(email: str) -> str:
-    """Minusculas, sin espacios y con los alias resueltos al usuario canonico."""
-    limpio = unicodedata.normalize("NFC", (email or "").strip().lower())
-    return ALIAS_USUARIOS.get(limpio, limpio)
+    """Minusculas y sin espacios, para que el login no dependa de como se tipeo."""
+    return unicodedata.normalize("NFC", (email or "").strip().lower())
 
 
 def verificar_credenciales(email: str, password: str) -> dict[str, str] | None:
-    """Datos del usuario si el par email/password es valido, sino None."""
-    usuario = usuarios().get(normalizar_email(email))
-    if not usuario or not password:
+    """Datos del usuario si el par email/contrasena es valido, sino None."""
+    if not password:
         return None
-    try:
-        salt = base64.b64decode(usuario["salt"])
-        esperado = base64.b64decode(usuario["hash"])
-    except (KeyError, ValueError):
-        _logger.error("Usuario %s mal configurado (salt/hash invalidos)", email)
+    esperada = cargar_usuarios().get(normalizar_email(email))
+    if not esperada:
         return None
     # compare_digest: comparacion de tiempo constante
-    if hmac.compare_digest(hash_password(password, salt), esperado):
-        return usuario
+    if hmac.compare_digest(password.encode("utf-8"), esperada.encode("utf-8")):
+        return {"email": normalizar_email(email)}
     return None
 
 
 # ---------------------------------------------------------------------------
 # Estado de la sesion
 # ---------------------------------------------------------------------------
-CLAVES_SESION = ("auth_ok", "auth_email", "auth_nombre", "auth_rol", "auth_inicio", "auth_ultimo_uso")
+CLAVES_SESION = ("auth_ok", "auth_email", "auth_inicio", "auth_ultimo_uso")
 
 # Datos del cliente cacheados en la sesion: no deben sobrevivir al logout
 CLAVES_DATOS = ("datos", "datos_completos", "_pdf")
@@ -196,14 +185,10 @@ def sesion_valida() -> bool:
 
 
 def usuario_actual() -> dict[str, str] | None:
-    """Datos del usuario logueado (email, nombre, rol) o None."""
+    """Datos del usuario logueado, o None si no hay sesion."""
     if not st.session_state.get("auth_ok"):
         return None
-    return {
-        "email": st.session_state.get("auth_email", ""),
-        "nombre": st.session_state.get("auth_nombre", ""),
-        "rol": st.session_state.get("auth_rol", ""),
-    }
+    return {"email": st.session_state.get("auth_email", "")}
 
 
 def _bloqueado() -> bool:
@@ -260,7 +245,7 @@ def login_page() -> None:
         st.html(f"""
         <div class="agpx-login">
           <h1>🌱 {EMPRESA} Dashboard</h1>
-          <p class="agpx-sub">Acceso privado — ingresá con tu usuario corporativo.</p>
+          <p class="agpx-sub">Acceso privado — ingresá con tu usuario autorizado.</p>
           <div class="agpx-confidencial">
             <strong>⚠️ CONFIDENCIAL</strong><br>
             Información de facturación de {EMPRESA}. El acceso es personal, queda
@@ -268,6 +253,16 @@ def login_page() -> None:
           </div>
         </div>
         """)
+
+        if not cargar_usuarios():
+            # Sin secrets no puede entrar nadie: conviene decirlo en pantalla en
+            # vez de rechazar todos los intentos como si fueran contrasenas malas
+            st.error(
+                "No hay usuarios configurados: falta la sección `[auth_users]` en los "
+                "secrets. En Streamlit Cloud se carga en **Settings → Secrets**; en "
+                "local, en `.streamlit/secrets.toml`.",
+                icon="⚙️",
+            )
 
         if st.session_state.pop("auth_aviso_timeout", False):
             st.info(
@@ -277,7 +272,7 @@ def login_page() -> None:
             )
 
         with st.form("agpx_login"):
-            email = st.text_input("Email", placeholder="nombre@agropix.com")
+            email = st.text_input("Email", placeholder="tu-email@gmail.com")
             password = st.text_input("Contraseña", type="password")
             enviar = st.form_submit_button("Ingresar", type="primary", width="stretch")
 
@@ -293,14 +288,12 @@ def login_page() -> None:
                 ahora = datetime.now()
                 st.session_state.update(
                     auth_ok=True,
-                    auth_email=normalizar_email(email),
-                    auth_nombre=usuario.get("nombre", ""),
-                    auth_rol=usuario.get("rol", ""),
+                    auth_email=usuario["email"],
                     auth_inicio=ahora,
                     auth_ultimo_uso=ahora,
                     auth_intentos=0,
                 )
-                audit_log("login_ok", st.session_state["auth_email"], usuario.get("rol", ""))
+                audit_log("login_ok", usuario["email"])
                 st.balloons()
                 st.rerun()
             else:
@@ -322,11 +315,11 @@ def login_page() -> None:
 def check_authentication() -> dict[str, str]:
     """Portero de la app: muestra el login y corta la ejecucion si no hay sesion valida.
 
-    Devuelve los datos del usuario logueado (email, nombre, rol), asi el archivo
-    principal puede usarlos en la bienvenida:
+    Devuelve los datos del usuario logueado, asi el archivo principal puede
+    usarlos en la bienvenida:
 
         usuario = check_authentication()
-        st.caption(f"Bienvenido: {usuario['nombre']}")
+        st.caption(f"Bienvenido: {usuario['email']}")
     """
     if not sesion_valida():
         login_page()
@@ -340,8 +333,7 @@ def logout_button() -> None:
     if not usuario:
         return
     st.divider()
-    st.caption(f"👤 **{usuario['nombre']}** · {usuario['rol']}")
-    st.caption(usuario["email"])
+    st.caption(f"👤 {usuario['email']}")
     st.caption(f"⏳ La sesión se cierra tras {_minutos_restantes()} min sin actividad.")
     if st.button("🚪 Cerrar sesión", width="stretch", key="agpx_logout"):
         cerrar_sesion("logout")
@@ -350,11 +342,8 @@ def logout_button() -> None:
 
 
 if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) != 2:
-        print('Uso: python -m utils.auth "LaPasswordNueva"')
-        raise SystemExit(1)
-    salt_b64, hash_b64 = generar_credencial(sys.argv[1])
-    print(f'"salt": "{salt_b64}",')
-    print(f'"hash": "{hash_b64}",')
+    # Imprime el esqueleto de la seccion [auth_users] para pegar en los secrets.
+    # No incluye contrasenas: se completan a mano donde corresponda.
+    print(f"[{SECCION_SECRETS}]")
+    for email, clave in EMAILS_AUTORIZADOS.items():
+        print(f'{clave} = ""   # {email}')

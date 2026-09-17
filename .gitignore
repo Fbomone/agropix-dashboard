@@ -6,6 +6,12 @@ __pycache__/
 credentials.json
 data/cache/
 data/auditoria.log
-# El tema (.streamlit/config.toml) SI se versiona para que viaje al deploy;
-# los secretos NO.
+
+# Secretos: el tema (.streamlit/config.toml) SI se versiona para que viaje al
+# deploy; las credenciales NO.
 .streamlit/secrets.toml
+
+# Ningun .json nuevo entra al repo por descuido (credenciales, exports, dumps).
+*.json
+# Excepto los que la app necesita para arrancar.
+!precios_lista.json

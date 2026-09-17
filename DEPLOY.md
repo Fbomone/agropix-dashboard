@@ -17,38 +17,47 @@ with st.sidebar:
     logout_button()
 ```
 
-`check_authentication()` devuelve un dict con `email`, `nombre` y `rol`, que es
-lo que alimenta la línea de bienvenida del encabezado. La verificación pura, sin
+`check_authentication()` devuelve un dict con el `email` del usuario, que es lo
+que alimenta la línea de bienvenida del encabezado. La verificación pura, sin
 dibujar nada, es `sesion_valida()`.
 
-### Cómo están guardadas las contraseñas
+### Dónde están las contraseñas
 
-Las 3 contraseñas **no están en el repositorio**. `utils/auth.py` guarda, por
-usuario, un `salt` aleatorio y el hash PBKDF2-SHA256 de la contraseña
-(240.000 iteraciones). Con el hash no se puede iniciar sesión ni recuperar la
-contraseña original.
+En **ningún archivo del repositorio**. Se leen de `st.secrets["auth_users"]`:
 
-| Usuario                | Rol      |
-|------------------------|----------|
-| `dueno@agropix.com`    | admin    |
-| `gerente@agropix.com`  | gerente  |
-| `vendedor@agropix.com` | vendedor |
+- local → `.streamlit/secrets.toml` (en `.gitignore`, nunca se pushea)
+- Cloud → *Manage app → Settings → Secrets*, cifrados del lado de Streamlit
 
-`dueño@agropix.com` (con ñ) funciona como alias de `dueno@`: la parte local de
-una dirección de correo debería ser ASCII, así que el usuario canónico es sin ñ.
+Sin esa sección no entra nadie: no hay usuario de emergencia ni contraseña por
+defecto en el código. La pantalla de login lo avisa explícitamente en vez de
+rechazar los intentos como si fueran contraseñas equivocadas.
 
-### Rotar una contraseña
+| Usuario | Clave en `[auth_users]` |
+|---|---|
+| `francobomone14@gmail.com` | `francobomone14_gmail_com` |
+| `infoagropix@gmail.com` | `infoagropix_gmail_com` |
+| `matias21tossen@gmail.com` | `matias21tossen_gmail_com` |
 
-```bash
-python -m utils.auth "LaPasswordNueva"      # imprime "salt" y "hash"
-```
+La clave del secret es el email con `@` y `.` cambiados por `_`, porque TOML no
+los acepta en una clave simple.
 
-Dos opciones con esa salida:
+Las contraseñas se guardan tal cual, sin hashear, para poder administrarlas
+desde el panel de Cloud sin herramientas extra. La contrapartida: quien tenga
+acceso a ese panel las ve en claro, así que conviene que nadie reuse ahí una
+contraseña personal de otro servicio.
 
-- **Sin deploy** (recomendado): pegarla en la tabla `[usuarios."email"]` de los
-  Secrets de Streamlit Cloud. Si esa tabla existe, reemplaza por completo a
-  `USUARIOS_AUTORIZADOS` del código.
-- **Con deploy**: reemplazar `salt`/`hash` en `utils/auth.py` y pushear.
+### Dar de alta, dar de baja o rotar
+
+- **Rotar**: cambiar el valor en Secrets y guardar. Tiene efecto sin redeploy,
+  porque los usuarios se releen en cada rerun.
+- **Dar de baja**: borrar esa línea de Secrets. El email queda sin contraseña
+  cargada y deja de entrar.
+- **Dar de alta**: agregar el email a `EMAILS_AUTORIZADOS` en `utils/auth.py`
+  (esto sí requiere push) y su contraseña en Secrets. Una contraseña en Secrets
+  para un email que no esté en esa lista **no habilita a nadie**.
+
+`python -m utils.auth` imprime el esqueleto de la sección `[auth_users]`, sin
+contraseñas, para pegar y completar.
 
 ### Lo que el login hace y lo que no
 
@@ -57,7 +66,7 @@ Dos opciones con esa salida:
 | Sesión de 30 min de inactividad, con logout automático | No hay recuperación de contraseña por mail |
 | Bloqueo 5 min tras 5 intentos fallidos (por sesión) | El bloqueo es por sesión de navegador, no por IP |
 | Log de accesos (`login_ok`, `login_fallido`, `bloqueo`, cierres) | No hay 2FA |
-| Borra `datos`/`datos_completos`/`_pdf` de la sesión al salir | La URL de la app sigue siendo pública: cualquiera ve el login |
+| Borra `datos`/`datos_completos`/`_pdf` de la sesión al salir | No hay roles ni permisos: los 3 usuarios ven lo mismo |
 
 **Auditoría:** `audit_log()` escribe al logger estándar (visible en *Manage app →
 Logs* de Streamlit Cloud) y, si el disco es escribible, a `data/auditoria.log`.
@@ -74,6 +83,8 @@ muestra el login y falla recién al leer Google Sheets.
 
 1. Copiar `.streamlit/secrets.toml.example` completo.
 2. share.streamlit.io → la app → **Settings → Secrets** → pegar y completar.
+   **El cuadro reemplaza todo lo que haya**: copiá antes lo que ya esté cargado,
+   sobre todo si `[gcp_service_account]` ya tiene la service account de verdad.
 3. El bloque `[gcp_service_account]` es el contenido de `credentials.json`.
    En la `private_key`, los saltos de línea van como `\n` (el código los
    des-escapa solo).
@@ -140,7 +151,7 @@ scheduler externo, que Community Cloud no tiene.
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                                     # 89 tests; 10 se saltean
+pytest                                     # 96 tests, ninguno se saltea
 
 # Incluyendo los que necesitan las contraseñas reales:
 AGROPIX_TEST_PASS_DUENO='...' AGROPIX_TEST_PASS_GERENTE='...' \
@@ -150,5 +161,7 @@ AGROPIX_TEST_PASS_VENDEDOR='...' pytest
 Ningún test toca la red. `tests/test_app_login.py` corre `app.py` de verdad con
 `AppTest` y verifica que sin sesión válida **no se lee Google Sheets**.
 
-Verificado además contra los Sheets reales en local: login → dashboard con 11
-KPIs y 2 tablas → logout que vuelve al login y limpia los datos de la sesión.
+Los tests no usan las contraseñas reales: arman su propio `[auth_users]` de
+mentira. Verificado además contra los secrets y los Sheets reales en local: los
+3 usuarios entran, el dashboard carga 11 KPIs y 2 tablas, y el logout vuelve al
+login limpiando los datos de la sesión.

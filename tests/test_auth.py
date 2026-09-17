@@ -1,15 +1,10 @@
 """Tests de la capa de autenticacion (sin runtime de Streamlit).
 
-Los tests que necesitan las contrasenas reales las leen del entorno: este
-archivo se versiona, asi que no puede contenerlas. Para correrlos:
-
-    AGROPIX_TEST_PASS_DUENO=... AGROPIX_TEST_PASS_GERENTE=... \\
-    AGROPIX_TEST_PASS_VENDEDOR=... pytest
-
-Sin esas variables esos tests se saltean; el resto corre siempre.
+Las contrasenas reales no estan aca: los tests arman su propia seccion
+[auth_users] de mentira monkeypatcheando cargar_usuarios / _seccion_secrets.
 """
-import base64
-import os
+import re
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -17,90 +12,124 @@ import pytest
 
 from utils import auth
 
-PASSWORDS = {
-    email: os.getenv(var, "")
-    for email, var in [
-        ("dueno@agropix.com", "AGROPIX_TEST_PASS_DUENO"),
-        ("gerente@agropix.com", "AGROPIX_TEST_PASS_GERENTE"),
-        ("vendedor@agropix.com", "AGROPIX_TEST_PASS_VENDEDOR"),
-    ]
+# Usuarios de prueba: NO son las contrasenas reales del dashboard
+SECRETS_FALSOS = {
+    "francobomone14_gmail_com": "clave-de-prueba-franco",
+    "infoagropix_gmail_com": "clave-de-prueba-info",
+    "matias21tossen_gmail_com": "clave-de-prueba-matias",
 }
 
-sin_passwords = pytest.mark.skipif(
-    not all(PASSWORDS.values()),
-    reason="faltan las variables AGROPIX_TEST_PASS_* con las contrasenas reales",
-)
+
+@pytest.fixture
+def secrets(monkeypatch):
+    """Simula st.secrets["auth_users"] con los 3 usuarios autorizados."""
+    monkeypatch.setattr(auth, "_seccion_secrets", lambda _n: dict(SECRETS_FALSOS))
 
 
-@sin_passwords
-@pytest.mark.parametrize("email", list(PASSWORDS))
-def test_credenciales_validas(email):
-    usuario = auth.verificar_credenciales(email, PASSWORDS[email])
-    assert usuario is not None
-    assert usuario["rol"]
+@pytest.fixture
+def sin_secrets(monkeypatch):
+    monkeypatch.setattr(auth, "_seccion_secrets", lambda _n: {})
 
 
-@sin_passwords
-@pytest.mark.parametrize("mutar", [
-    lambda p: p.lower(),        # otra capitalizacion
-    lambda p: "",               # password vacia
-    lambda p: p + " ",          # espacio de mas
-    lambda p: p[:-1],           # un caracter menos
-])
-def test_password_incorrecta_no_entra(mutar):
-    correcta = PASSWORDS["dueno@agropix.com"]
-    mutada = mutar(correcta)
-    assert mutada != correcta, "la mutacion no cambio la password"
-    assert auth.verificar_credenciales("dueno@agropix.com", mutada) is None
+# ---------------------------------------------------------------------------
+# Carga de usuarios desde secrets
+# ---------------------------------------------------------------------------
+def test_cargar_usuarios_mapea_las_claves_toml_a_emails(secrets):
+    assert set(auth.cargar_usuarios()) == {
+        "francobomone14@gmail.com",
+        "infoagropix@gmail.com",
+        "matias21tossen@gmail.com",
+    }
 
 
-@pytest.mark.parametrize("email,password", [
-    ("nadie@agropix.com", "CualquieraQueSea1!"),  # usuario inexistente
-    ("dueno@agropix.com", ""),                    # password vacia
-    ("", ""),
-])
-def test_credenciales_invalidas(email, password):
-    assert auth.verificar_credenciales(email, password) is None
+def test_sin_secrets_no_hay_ningun_usuario(sin_secrets):
+    assert auth.cargar_usuarios() == {}
 
 
-def test_email_se_normaliza_y_alias_con_enie_apunta_al_usuario_canonico():
-    assert auth.normalizar_email("  DUEÑO@Agropix.COM ") == "dueno@agropix.com"
-    assert auth.normalizar_email("dueno@agropix.com") in auth.USUARIOS_AUTORIZADOS
+def test_usuario_sin_contrasena_cargada_queda_afuera(monkeypatch):
+    monkeypatch.setattr(auth, "_seccion_secrets", lambda _n: {
+        "francobomone14_gmail_com": "clave",
+        "infoagropix_gmail_com": "",       # a medio configurar
+        # matias directamente no esta
+    })
+    assert list(auth.cargar_usuarios()) == ["francobomone14@gmail.com"]
 
 
-@sin_passwords
-def test_alias_con_enie_permite_entrar():
-    assert auth.verificar_credenciales("DUEÑO@Agropix.com", PASSWORDS["dueno@agropix.com"])
+def test_un_email_ajeno_en_los_secrets_no_habilita_a_nadie(monkeypatch):
+    """Solo entran los emails de EMAILS_AUTORIZADOS, no lo que diga el secret."""
+    monkeypatch.setattr(auth, "_seccion_secrets", lambda _n: {
+        "intruso_gmail_com": "clave-inventada",
+    })
+    assert auth.cargar_usuarios() == {}
 
 
-@sin_passwords
-def test_ningun_archivo_versionado_tiene_las_passwords_en_texto_plano():
+def test_ningun_archivo_versionado_tiene_las_contrasenas():
+    """Busca el patron de las claves de Agropix en todo el repo.
+
+    Va como regex y no como literal para que este test no sea, el mismo, el
+    lugar donde quedan escritas las contrasenas.
+    """
+    patron = re.compile(r"Agro[A-Za-z]+20\d\d#")
     raiz = Path(auth.__file__).resolve().parent.parent
-    revisados = 0
+    revisados = []
     for archivo in raiz.rglob("*"):
-        if not archivo.is_file() or "venv" in archivo.parts or ".git" in archivo.parts:
+        partes = set(archivo.parts)
+        if not archivo.is_file() or partes & {"venv", ".git", ".pytest_cache"}:
             continue
         if archivo.suffix not in {".py", ".txt", ".toml", ".md", ".json", ".ini"}:
             continue
+        if archivo.name == "secrets.toml":
+            continue  # local y fuera del repo: ahi SI van las contrasenas
         texto = archivo.read_text(encoding="utf-8", errors="ignore")
-        revisados += 1
-        for password in PASSWORDS.values():
-            assert password not in texto, f"password en texto plano en {archivo}"
-    assert revisados > 5
+        revisados.append(archivo.name)
+        assert not patron.search(texto), f"contrasena en texto plano en {archivo}"
+    assert len(revisados) > 5
 
 
-def test_hash_usa_salt_distinto_por_usuario():
-    salts = {u["salt"] for u in auth.USUARIOS_AUTORIZADOS.values()}
-    assert len(salts) == len(auth.USUARIOS_AUTORIZADOS)
+def test_el_secrets_local_no_se_versiona():
+    raiz = Path(auth.__file__).resolve().parent.parent
+    versionados = subprocess.run(
+        ["git", "ls-files"], cwd=raiz, capture_output=True, text=True, check=True
+    ).stdout.splitlines()
+    assert ".streamlit/secrets.toml" not in versionados
+    assert ".streamlit/config.toml" in versionados  # el tema si viaja al deploy
 
 
-def test_generar_credencial_verifica_contra_su_password():
-    salt_b64, hash_b64 = auth.generar_credencial("OtraClave!2026")
-    salt = base64.b64decode(salt_b64)
-    assert base64.b64encode(auth.hash_password("OtraClave!2026", salt)).decode() == hash_b64
-    assert base64.b64encode(auth.hash_password("otraclave!2026", salt)).decode() != hash_b64
+# ---------------------------------------------------------------------------
+# Verificacion de credenciales
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("email", [
+    "francobomone14@gmail.com", "infoagropix@gmail.com", "matias21tossen@gmail.com",
+])
+def test_los_tres_usuarios_entran(secrets, email):
+    clave = auth.cargar_usuarios()[email]
+    assert auth.verificar_credenciales(email, clave) == {"email": email}
 
 
+def test_email_se_normaliza(secrets):
+    clave = SECRETS_FALSOS["francobomone14_gmail_com"]
+    assert auth.verificar_credenciales("  FrancoBomone14@Gmail.COM ", clave)
+
+
+@pytest.mark.parametrize("email,password", [
+    ("francobomone14@gmail.com", "clave-de-prueba-FRANCO"),  # otra capitalizacion
+    ("francobomone14@gmail.com", "clave-de-prueba-franc"),   # un caracter menos
+    ("francobomone14@gmail.com", "clave-de-prueba-franco "),  # espacio de mas
+    ("francobomone14@gmail.com", ""),                        # vacia
+    ("hackers@hack.com", "wrong"),                           # usuario no autorizado
+    ("", ""),
+])
+def test_credenciales_invalidas(secrets, email, password):
+    assert auth.verificar_credenciales(email, password) is None
+
+
+def test_sin_secrets_no_entra_ni_el_usuario_correcto(sin_secrets):
+    assert auth.verificar_credenciales("francobomone14@gmail.com", "lo-que-sea") is None
+
+
+# ---------------------------------------------------------------------------
+# Sesion
+# ---------------------------------------------------------------------------
 class SesionFalsa(dict):
     """Imita lo que usa auth.py de st.session_state."""
 
@@ -118,15 +147,15 @@ def test_sin_sesion_no_hay_acceso(sesion):
 
 
 def test_sesion_activa_renueva_el_plazo(sesion):
-    sesion.update(auth_ok=True, auth_ultimo_uso=datetime.now() - timedelta(minutes=29),
-                  auth_email="dueno@agropix.com", auth_nombre="Dueño", auth_rol="admin")
+    sesion.update(auth_ok=True, auth_email="francobomone14@gmail.com",
+                  auth_ultimo_uso=datetime.now() - timedelta(minutes=29))
     assert auth.sesion_valida() is True
     assert datetime.now() - sesion["auth_ultimo_uso"] < timedelta(seconds=5)
-    assert auth.usuario_actual()["rol"] == "admin"
+    assert auth.usuario_actual()["email"] == "francobomone14@gmail.com"
 
 
 def test_timeout_de_30_minutos_cierra_la_sesion(sesion):
-    sesion.update(auth_ok=True, auth_email="dueno@agropix.com",
+    sesion.update(auth_ok=True, auth_email="francobomone14@gmail.com",
                   auth_ultimo_uso=datetime.now() - timedelta(minutes=31))
     assert auth.sesion_valida() is False
     assert "auth_ok" not in sesion
@@ -139,7 +168,8 @@ def test_sesion_sin_marca_de_tiempo_se_descarta(sesion):
 
 
 def test_logout_borra_los_datos_del_cliente(sesion):
-    sesion.update(auth_ok=True, auth_email="dueno@agropix.com", auth_ultimo_uso=datetime.now(),
+    sesion.update(auth_ok=True, auth_email="francobomone14@gmail.com",
+                  auth_ultimo_uso=datetime.now(),
                   datos={"ventas": 1}, datos_completos={"ventas": 1}, _pdf={"bytes": b"x"})
     auth.cerrar_sesion()
     assert not any(c in sesion for c in auth.CLAVES_SESION + auth.CLAVES_DATOS)
@@ -147,7 +177,7 @@ def test_logout_borra_los_datos_del_cliente(sesion):
 
 def test_bloqueo_tras_cinco_intentos_fallidos(sesion):
     for _ in range(auth.MAX_INTENTOS):
-        auth._registrar_fallo("atacante@agropix.com")
+        auth._registrar_fallo("hackers@hack.com")
     assert auth._bloqueado() is True
 
     sesion["auth_bloqueo_hasta"] = datetime.now() - timedelta(seconds=1)  # bloqueo vencido

@@ -3,8 +3,9 @@
 Lo que se prueba: sin sesion valida la app muestra el login y NO llega a leer
 Google Sheets. cargar_crudos se mockea con un fallo ruidoso: si la porteria se
 saltea, el test rompe.
+
+Las credenciales salen de un [auth_users] de mentira, no de los secrets reales.
 """
-import os
 from pathlib import Path
 
 import pytest
@@ -15,8 +16,18 @@ APP = Path(__file__).resolve().parent.parent / "app.py"
 TIMEOUT = 60  # el import de app.py arrastra plotly y reportlab
 
 
+EMAIL = "francobomone14@gmail.com"
+CLAVE = "clave-de-prueba-no-es-la-real"
+
+
 @pytest.fixture
-def app(monkeypatch):
+def secrets(monkeypatch):
+    monkeypatch.setattr(auth, "_seccion_secrets",
+                        lambda _n: {"francobomone14_gmail_com": CLAVE})
+
+
+@pytest.fixture
+def app(monkeypatch, secrets):
     from streamlit.testing.v1 import AppTest
 
     def no_deberia_llamarse(*_args, **_kwargs):
@@ -38,7 +49,7 @@ def test_sin_login_muestra_el_formulario_y_no_lee_sheets(app):
 
 def test_password_incorrecta_muestra_error(app):
     app.run()
-    app.text_input[0].set_value("dueno@agropix.com")
+    app.text_input[0].set_value(EMAIL)
     app.text_input[1].set_value("password-que-no-es")
     app.button[0].click().run()
     assert not app.exception
@@ -62,11 +73,7 @@ def test_el_aviso_confidencial_esta_en_la_pantalla(app):
     assert auth.CONTACTO_SOPORTE in html
 
 
-@pytest.mark.skipif(
-    not os.getenv("AGROPIX_TEST_PASS_DUENO"),
-    reason="falta AGROPIX_TEST_PASS_DUENO",
-)
-def test_login_valido_abre_la_sesion(monkeypatch):
+def test_login_valido_abre_la_sesion(monkeypatch, secrets):
     """Con credenciales correctas la app pasa la porteria y recien ahi lee Sheets."""
     from streamlit.testing.v1 import AppTest
 
@@ -78,16 +85,27 @@ def test_login_valido_abre_la_sesion(monkeypatch):
 
     monkeypatch.setattr("utils.data.cargar_crudos", falla_controlada)
     app = AppTest.from_file(str(APP), default_timeout=TIMEOUT).run()
-    app.text_input[0].set_value("dueno@agropix.com")
-    app.text_input[1].set_value(os.environ["AGROPIX_TEST_PASS_DUENO"])
+    app.text_input[0].set_value(EMAIL)
+    app.text_input[1].set_value(CLAVE)
     app.button[0].click().run()
 
     assert app.session_state["auth_ok"] is True
-    assert app.session_state["auth_rol"] == "admin"
+    assert app.session_state["auth_email"] == EMAIL
     assert llamadas, "despues del login la app deberia intentar leer Sheets"
     # app.py atrapa el fallo de Sheets y muestra su propio mensaje
     assert any("No se pudo leer Google Sheets" in e.value for e in app.error)
     # El encabezado se dibuja antes de leer Sheets, asi que esta igual
     html = " ".join(b.body for b in app.get("html"))
-    assert "Bienvenido" in html and "Dueño" in html
+    assert "Bienvenido" in html and EMAIL in html
     assert "DATOS CONFIDENCIALES" in html
+
+
+def test_sin_secrets_avisa_que_falta_configuracion(monkeypatch):
+    """Sin [auth_users] la pantalla lo dice, en vez de rechazar todo en silencio."""
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setattr(auth, "_seccion_secrets", lambda _n: {})
+    monkeypatch.setattr("utils.data.cargar_crudos",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no")))
+    app = AppTest.from_file(str(APP), default_timeout=TIMEOUT).run()
+    assert any("auth_users" in e.value for e in app.error)

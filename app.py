@@ -35,7 +35,7 @@ st.html(f"""
   <strong style="color:#2E7D32">📊 Dashboard Agropix</strong>
   <span style="color:#B3261E;font-weight:600;letter-spacing:.03em">DATOS CONFIDENCIALES</span>
   <span style="color:#5F6B7A;margin-left:auto">
-    Bienvenido: <strong>{usuario["nombre"]}</strong> · {usuario["email"]}
+    Bienvenido: <strong>{usuario["email"]}</strong>
   </span>
 </div>
 """)

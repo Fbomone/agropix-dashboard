@@ -9,12 +9,15 @@ Dos entornos, una sola fuente de verdad:
 Las variables de entorno tienen prioridad sobre los secrets, asi se puede
 apuntar a otro Sheet en local sin tocar la configuracion del deploy.
 """
+import logging
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_log = logging.getLogger("agropix.config")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 CREDENTIALS_PATH = BASE_DIR / "credentials.json"
@@ -54,9 +57,12 @@ COHERE_API_KEY = _cfg("COHERE_API_KEY")
 def _sendgrid(clave: str) -> str:
     try:
         tabla = _secrets().get("sendgrid") or {}
-        return str(dict(tabla).get(clave, ""))
+        valor = str(dict(tabla).get(clave, "")).strip()
     except Exception:
         return ""
+    # "placeholder_sendgrid_key" y companía no son credenciales: tratarlas como
+    # vacias evita que aparezca el boton de mail para despues fallar con un 403.
+    return "" if valor.lower().startswith("placeholder") else valor
 
 
 SENDGRID_API_KEY = _cfg("SENDGRID_API_KEY") or _sendgrid("api_key")
@@ -66,6 +72,19 @@ EMAIL_DESTINATARIOS = [
     for d in (_cfg("EMAIL_DESTINATARIOS") or _sendgrid("destinatarios")).split(",")
     if d.strip()
 ]
+
+
+def _service_account_usable(info: dict) -> bool:
+    """False si la tabla es un placeholder o esta incompleta.
+
+    Es comun dejar [gcp_service_account] con valores de relleno mientras se
+    configura el resto de los secrets. Si lo diera por bueno, en local se
+    dejaria de usar credentials.json y Google Sheets fallaria.
+    """
+    requeridos = ("type", "project_id", "private_key", "client_email", "token_uri")
+    if any(not str(info.get(c, "")).strip() for c in requeridos):
+        return False
+    return "PRIVATE KEY" in str(info["private_key"])
 
 
 def credenciales_google() -> dict | None:
@@ -83,4 +102,10 @@ def credenciales_google() -> dict | None:
     info = dict(info)
     if isinstance(info.get("private_key"), str):
         info["private_key"] = info["private_key"].replace("\\n", "\n")
+    if not _service_account_usable(info):
+        _log.warning(
+            "[gcp_service_account] incompleto o de relleno en los secrets: "
+            "se ignora y se usa credentials.json si existe."
+        )
+        return None
     return info
