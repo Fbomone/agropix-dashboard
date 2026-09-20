@@ -13,7 +13,10 @@ data/auditoria.log
 
 # Ningun .json nuevo entra al repo por descuido (credenciales, exports, dumps).
 *.json
-# Excepto los que la app necesita para arrancar.
+# Excepto los que el proyecto necesita. Los archivos ya versionados no se
+# desversionan por la regla de arriba, pero sin estas excepciones un rm + add
+# los perderia en silencio.
 !precios_lista.json
+!.devcontainer/devcontainer.json
 salida/
 data/envios.jsonl
