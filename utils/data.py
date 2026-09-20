@@ -934,18 +934,6 @@ def resumen_por_modelo(unidades: pd.DataFrame) -> pd.DataFrame:
     return r.sort_values(["unidades", "monto_asignado"], ascending=False).reset_index(drop=True)
 
 
-def ranking_vendedores(ops: pd.DataFrame) -> pd.DataFrame:
-    v = vigentes(ops)
-    if v.empty:
-        return pd.DataFrame()
-    r = (
-        v.assign(vendedor=v["vendedor"].fillna("Sin vendedor"))
-        .groupby("vendedor", as_index=False)
-        .agg(unidades=("unidades", "sum"), operaciones=("id_operacion", "size"), monto=("factura", "sum"))
-    )
-    return r.sort_values(["unidades", "monto"], ascending=False).reset_index(drop=True)
-
-
 # ---------------------------------------------------------------------------
 # Reporte consolidado: ingreso real de Agropix
 # ---------------------------------------------------------------------------

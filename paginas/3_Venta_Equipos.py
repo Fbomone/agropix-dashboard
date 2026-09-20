@@ -2,12 +2,17 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from utils.data import COBRADO, EQUIPOS, POR_COBRAR, kpis_equipos, ranking_vendedores, resumen_por_modelo, vigentes
+from utils.comisiones import (
+    comisiones_por_canal, equipos_por_marca, ranking_vendedores, ticket_promedio_equipos,
+)
+from utils.data import (
+    COBRADO, EQUIPOS, POR_COBRAR, kpis_equipos, resumen_por_modelo, vigentes,
+)
 from utils.format import (
     AMBAR, COLORES_COBRO, COLORES_UNIDAD, ETIQUETA_MONEDA, HOVER_MONEDA,
     formatear_moneda, formatear_moneda_completa, formatear_numero, formatear_porcentaje,
 )
-from utils.ui import barras_por, columna_moneda, espacio_para_etiquetas, grafico, hay_datos, metricas
+from utils.ui import columna_moneda, espacio_para_etiquetas, grafico, hay_datos, metricas
 
 COLOR = COLORES_UNIDAD[EQUIPOS]
 
@@ -19,24 +24,35 @@ st.caption("Fuente: Ventas. Una operación puede incluir varios equipos; las dev
 
 k = kpis_equipos(ops, unidades)
 comision_total = k["comision_cobrada"] + k["comision_por_cobrar"]
+te = ticket_promedio_equipos(ops, unidades)
+marcas = equipos_por_marca(unidades)
+principales = int(marcas.loc[marcas["principal"], "unidades"].sum()) if not marcas.empty else 0
+
+# La comision va primero: es el ingreso real de Agropix. El facturado al cliente
+# queda despues, como volumen intermediado.
 metricas([
-    dict(label="Unidades vendidas", value=formatear_numero(k["unidades"]),
-         delta=f"{formatear_numero(k['operaciones'])} operaciones", delta_color="off", delta_arrow="off",
-         help="Cada modelo de la celda 'Modelo' es una unidad; repetido = varias unidades"),
-    dict(label="Facturado s/IVA (cliente)", value=formatear_moneda(k["monto"]),
-         help=f"{formatear_moneda_completa(k['monto'])}: precio de venta al cliente sin IVA, por operación completa"),
-    dict(label="Comisión Agropix cobrada", value=formatear_moneda(k["comision_cobrada"]),
-         help=formatear_moneda_completa(k["comision_cobrada"])),
-    dict(label="Comisión Agropix por cobrar", value=formatear_moneda(k["comision_por_cobrar"]),
+    dict(label="💰 Comisión cobrada", value=formatear_moneda(k["comision_cobrada"]),
+         delta=f"{formatear_porcentaje(k['comision_cobrada'] / comision_total if comision_total else 0)} de la generada",
+         delta_color="off", delta_arrow="off", help=formatear_moneda_completa(k["comision_cobrada"])),
+    dict(label="⏳ Comisión por cobrar", value=formatear_moneda(k["comision_por_cobrar"]),
          help=formatear_moneda_completa(k["comision_por_cobrar"])),
-    dict(label="Ticket promedio (facturado)", value=formatear_moneda(k["ticket_promedio"]),
-         help=f"{formatear_moneda_completa(k['ticket_promedio'])} de Facturado s/IVA por operación"),
+    dict(label="Ticket por equipo", value=formatear_moneda(te["ticket_cobrado"]),
+         delta=f"{te['cantidad']} drones (Agras T + Mavic)", delta_color="off", delta_arrow="off",
+         help="Comisión cobrada dividida por unidad vendida. Sólo drones: los accesorios no cuentan."),
+    dict(label="Unidades vendidas", value=formatear_numero(k["unidades"]),
+         delta=f"{principales} drones · {formatear_numero(k['operaciones'])} operaciones",
+         delta_color="off", delta_arrow="off",
+         help="Cada modelo de la celda 'Modelo' es una unidad; repetido = varias unidades"),
+    dict(label="Volumen intermediado", value=formatear_moneda(k["monto"]),
+         delta="no es ingreso de Agropix", delta_color="off", delta_arrow="off",
+         help=f"{formatear_moneda_completa(k['monto'])}: Facturado s/IVA al cliente por operación completa. "
+              "Es plata del cliente al proveedor."),
 ])
 st.caption(
-    "**Facturado s/IVA (cliente)**: precio al cliente sin IVA por toda la operación; depende de la forma de pago, "
-    "por eso no coincide con el precio de lista. **Comisión Agropix**: lo que gana Agropix (Comisión % aplicado; "
-    f"en el período, {formatear_porcentaje(comision_total / k['monto'] if k['monto'] else 0)} del facturado). "
-    "El precio de lista solo reparte el facturado entre los modelos de una misma operación."
+    "**Comisión Agropix** es lo que gana Agropix y la métrica que manda en esta página. El **Facturado s/IVA** al "
+    f"cliente ({formatear_moneda(k['monto'])}) es volumen intermediado: en el período la comisión fue el "
+    f"{formatear_porcentaje(comision_total / k['monto'] if k['monto'] else 0)} de ese facturado. El precio de lista "
+    "sólo reparte el facturado entre los modelos de una misma operación."
 )
 
 v = vigentes(ops)
@@ -110,8 +126,21 @@ with g3:
                                         f"<br>Facturado s/IVA: %{{customdata[0]:{HOVER_MONEDA}}}<extra></extra>")
         grafico(fig, key="formas_de_pago", eje_moneda=None)
 with g4:
-    st.subheader("Facturado s/IVA por canal (origen del lead)")
-    barras_por(v, "canal", valor="factura", horizontal=True, top=15, color=COLOR)
+    st.subheader("Comisión por canal (origen del lead)")
+    canal = comisiones_por_canal(ops)
+    if hay_datos(canal):
+        largo = canal.melt(id_vars="canal", value_vars=["comision_cobrada", "por_cobrar"],
+                           var_name="estado", value_name="monto")
+        largo["estado"] = largo["estado"].map({"comision_cobrada": "Cobrada", "por_cobrar": "Por cobrar"})
+        fig = px.bar(largo[largo["monto"] > 0], x="monto", y="canal", orientation="h", color="estado",
+                     color_discrete_map={"Cobrada": COLORES_COBRO[COBRADO],
+                                         "Por cobrar": COLORES_COBRO[POR_COBRAR]},
+                     category_orders={"estado": ["Cobrada", "Por cobrar"]},
+                     labels={"canal": "", "monto": "US$", "estado": ""})
+        fig.update_yaxes(categoryorder="total ascending")
+        fig.update_traces(hovertemplate=f"%{{y}} · %{{fullData.name}}<br>%{{x:{HOVER_MONEDA}}}<extra></extra>")
+        grafico(fig, key="comision_por_canal", eje_moneda="x")
+        st.caption("El volumen intermediado por canal está en la tabla del Reporte General.")
 
 g5, g6 = st.columns(2)
 with g5:
@@ -128,12 +157,23 @@ with g5:
         grafico(fig, key="comisiones")
 with g6:
     st.subheader("Top vendedores")
+    st.caption("Ordenados por comisión **cobrada**: es dinero que entró, no cantidad de operaciones.")
     ranking = ranking_vendedores(ops)
     if hay_datos(ranking):
         st.dataframe(
             ranking,
             hide_index=True,
             width="stretch",
-            column_config={"vendedor": "Vendedor", "unidades": "Unidades", "operaciones": "Operaciones",
-                           "monto": columna_moneda("Facturado s/IVA")},
+            column_order=["vendedor", "comision_cobrada", "comision_generada", "por_cobrar",
+                          "pct_cobranza", "unidades", "operaciones"],
+            column_config={
+                "vendedor": "Vendedor",
+                "comision_cobrada": columna_moneda("Comisión cobrada"),
+                "comision_generada": columna_moneda("Comisión generada"),
+                "por_cobrar": columna_moneda("Por cobrar"),
+                "pct_cobranza": st.column_config.ProgressColumn("% cobro", format="percent",
+                                                                min_value=0, max_value=1),
+                "unidades": st.column_config.NumberColumn("Unidades", format="%,.0f"),
+                "operaciones": st.column_config.NumberColumn("Operaciones", format="%,.0f"),
+            },
         )
