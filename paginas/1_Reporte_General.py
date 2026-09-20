@@ -10,10 +10,14 @@ from utils.format import (
     ALTO_GRAFICO, COLORES_COBRO, COLORES_UNIDAD, ETIQUETA_MONEDA, HOVER_MONEDA, MES_PLOTLY,
     formatear_moneda, formatear_moneda_completa, formatear_numero, formatear_porcentaje,
 )
-from utils.ui import columna_moneda, grafico, hay_datos, leyenda_estados, metricas
+from utils.comisiones import (
+    kpis_comisiones, ticket_promedio_equipos, ticket_promedio_servicios,
+)
+from utils.ui import columna_moneda, grafico, hay_datos, leyenda_estados, metricas, tarjetas_kpi
 
 datos = st.session_state["datos"]
 u, servicios, ops = datos["ventas_unificadas"], datos["servicios"], datos["equipos"]
+unidades = datos["unidades"]
 ORDEN_UNIDADES = {"unidad_negocio": [SERVICIO, EQUIPOS]}
 
 
@@ -38,27 +42,58 @@ st.caption(f"🔎 {leyenda_estados(st.session_state.get('estados_trabajo'), st.s
 # E) Foto consolidada: ingreso real de Agropix
 # ---------------------------------------------------------------------------
 kc = kpis_consolidado(servicios, ops)
-metricas([
-    dict(label="Ingreso Agropix", value=formatear_moneda(kc["ingreso_total"]),
-         help=f"{formatear_moneda_completa(kc['ingreso_total'])} = ventas de servicios + comisión de equipos"),
-    dict(label="Ventas de servicios", value=formatear_moneda(kc["ventas_servicios"]),
-         delta=f"{formatear_porcentaje(kc['pct_servicios'])} del ingreso", delta_color="off", delta_arrow="off",
-         help=formatear_moneda_completa(kc["ventas_servicios"])),
-    dict(label="Has trabajadas", value=f"{formatear_numero(kc['hectareas'])} ha"),
-    dict(label="Comisión Agropix cobrada", value=formatear_moneda(kc["comision_cobrada"]),
-         delta=f"{formatear_porcentaje(kc['pct_equipos'])} del ingreso (total comisión)", delta_color="off",
-         delta_arrow="off", help=formatear_moneda_completa(kc["comision_cobrada"])),
-    dict(label="Comisión Agropix por cobrar", value=formatear_moneda(kc["comision_por_cobrar"]),
-         help=formatear_moneda_completa(kc["comision_por_cobrar"])),
-    dict(label="Volumen intermediado", value=formatear_moneda(kc["facturado_equipos"]),
-         help=f"{formatear_moneda_completa(kc['facturado_equipos'])}: Facturado s/IVA al cliente por equipos. "
-              "No es ingreso de Agropix."),
+km = kpis_comisiones(servicios, ops)
+
+st.markdown("#### 💰 Comisiones e ingreso")
+tarjetas_kpi([
+    dict(label="💰 Comisiones cobradas", valor=formatear_moneda(km["comision_cobrada"]),
+         nota=f"{formatear_porcentaje(km['pct_cobranza'])} de lo generado · plata en la mano",
+         gradiente="cobradas"),
+    dict(label="📈 Comisiones generadas", valor=formatear_moneda(km["comision_generada"]),
+         nota=f"equipos {formatear_moneda(km['generada_equipos'])} · "
+              f"servicios {formatear_moneda(km['generado_servicios'])}",
+         gradiente="generadas"),
+    dict(label="⏳ Por cobrar", valor=formatear_moneda(km["por_cobrar"]),
+         nota=f"equipos {formatear_moneda(km['por_cobrar_equipos'])} · "
+              f"servicios {formatear_moneda(km['por_cobrar_servicios'])}",
+         gradiente="por_cobrar"),
+    dict(label="🌾 Has trabajadas", valor=f"{formatear_numero(km['hectareas'])} ha",
+         nota=f"{formatear_numero(km['cantidad_servicios'])} trabajos · "
+              f"{km['clientes']} clientes", gradiente="hectareas"),
 ])
 st.caption(
-    "**Ingreso Agropix** = Valor total de ventas de servicios + Comisión $ de equipos. En servicios Agropix se "
-    "queda con todo lo facturado; en equipos solo con la comisión. Por eso el Facturado s/IVA de equipos se "
-    "muestra aparte como **volumen intermediado** y no entra en la participación."
+    f"**Comisiones cobradas** es la métrica de verdad: {formatear_moneda_completa(km['comision_cobrada'])} que "
+    "entraron a Agropix. En servicios Agropix se queda con todo lo facturado; en equipos, sólo con la comisión. "
+    f"El Facturado s/IVA de equipos ({formatear_moneda(km['volumen_equipos'])}) es **volumen intermediado**: "
+    "plata del cliente al proveedor, no ingreso. Los trabajos cancelados y los equipos devueltos no suman."
 )
+
+# Desglose por tipo de ingreso: los dos negocios no se miden igual
+st.markdown("##### 🎯 Desglose por tipo de ingreso")
+d1, d2 = st.columns(2)
+te, ts = ticket_promedio_equipos(ops, unidades), ticket_promedio_servicios(servicios)
+with d1:
+    metricas([
+        dict(label="🚁 Equipos — comisión cobrada", value=formatear_moneda(km["cobrada_equipos"]),
+             delta=f"{formatear_porcentaje(km['pct_equipos'])} de lo cobrado", delta_color="off",
+             delta_arrow="off", help=formatear_moneda_completa(km["cobrada_equipos"])),
+        dict(label="Ticket por equipo", value=formatear_moneda(te["ticket_cobrado"]),
+             delta=f"{te['cantidad']} drones (Agras T + Mavic)", delta_color="off", delta_arrow="off",
+             help="Comisión cobrada dividida por unidad vendida, no por operación: una venta puede "
+                  "llevar varios drones."),
+        dict(label="Volumen intermediado", value=formatear_moneda(km["volumen_equipos"]),
+             delta="informativo, no es ingreso", delta_color="off", delta_arrow="off"),
+    ], por_fila=3)
+with d2:
+    metricas([
+        dict(label="🚜 Servicios — cobrado", value=formatear_moneda(km["cobrado_servicios"]),
+             delta=f"{formatear_porcentaje(km['pct_servicios'])} de lo cobrado", delta_color="off",
+             delta_arrow="off", help=formatear_moneda_completa(km["cobrado_servicios"])),
+        dict(label="Ticket por trabajo", value=formatear_moneda(ts["ticket"]),
+             delta=f"{formatear_numero(ts['cantidad'])} trabajos", delta_color="off", delta_arrow="off"),
+        dict(label="Valor por hectárea", value=formatear_moneda(ts["valor_por_ha"]),
+             delta=f"{formatear_numero(ts['hectareas'])} ha", delta_color="off", delta_arrow="off"),
+    ], por_fila=3)
 
 st.divider()
 # Streamlit borra el estado de un widget al cambiar de pagina: se restaura desde _filtro_granularidad

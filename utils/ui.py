@@ -6,8 +6,8 @@ import plotly.express as px
 import streamlit as st
 
 from utils.format import (
-    ALTO_GRAFICO, AMBAR, AZUL, ETIQUETA_MONEDA, FORMATO_MONEDA_TABLA, GRIS, HOVER_MONEDA,
-    PLOTLY_TEMPLATE, SEPARADORES_PLOTLY, TICK_MONEDA, VERDE,
+    ALTO_GRAFICO, AMBAR, AZUL, ETIQUETA_MONEDA, FORMATO_MONEDA_TABLA, GRADIENTES_KPI, GRIS,
+    HOVER_MONEDA, PLOTLY_TEMPLATE, SEPARADORES_PLOTLY, TICK_MONEDA, VERDE,
 )
 
 SIN_DATOS = "No hay datos para el período seleccionado"
@@ -130,3 +130,59 @@ def barras_por(df: pd.DataFrame, columna: str, valor: str = "monto", horizontal:
     grafico(fig, key=f"barras_{columna}_{valor}", eje_moneda="x" if horizontal else "y")
     if top and total_categorias > top:
         st.caption(f"Top {top} de {total_categorias}")
+
+
+# ---------------------------------------------------------------------------
+# Tarjetas de KPI (jerarquia visual del Reporte General)
+# ---------------------------------------------------------------------------
+# st.metric no permite pintar el fondo, y las metricas de comisiones son las que
+# el negocio mira primero: van como tarjetas con gradiente y texto blanco.
+# El grid es responsive de verdad (auto-fit + minmax): 4 columnas en desktop,
+# 2 en tablet y 1 apilada abajo de 420px, sin necesidad de detectar el ancho de
+# pantalla desde Python (Streamlit no expone esa informacion).
+_CSS_TARJETAS = """
+<style>
+  .agpx-kpis {
+    display: grid; gap: .75rem; margin: .25rem 0 1rem 0;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  }
+  .agpx-kpi {
+    border-radius: 12px; padding: 1rem 1.1rem; color: #FFFFFF;
+    box-shadow: 0 2px 8px rgba(16,24,40,.12); min-width: 0;
+  }
+  .agpx-kpi .agpx-kpi-label {
+    font-size: .8rem; font-weight: 600; letter-spacing: .03em;
+    text-transform: uppercase; opacity: .95; line-height: 1.25;
+  }
+  .agpx-kpi .agpx-kpi-valor {
+    font-size: 1.9rem; font-weight: 700; line-height: 1.15; margin: .35rem 0 .1rem 0;
+    overflow-wrap: anywhere;   /* que un numero largo no desborde en mobile */
+  }
+  .agpx-kpi .agpx-kpi-nota { font-size: .78rem; opacity: .92; line-height: 1.3; }
+  @media (max-width: 420px) {
+    .agpx-kpis { grid-template-columns: 1fr; }
+    .agpx-kpi .agpx-kpi-valor { font-size: 1.6rem; }
+  }
+</style>
+"""
+
+
+def tarjetas_kpi(tarjetas: list) -> None:
+    """KPIs destacados con fondo de color.
+
+    tarjetas: dicts con label, valor, nota (opcional) y gradiente (clave de
+    GRADIENTES_KPI o tupla (claro, oscuro)).
+    """
+    if not tarjetas:
+        return
+    bloques = []
+    for t in tarjetas:
+        gradiente = t.get("gradiente", "neutro")
+        claro, oscuro = GRADIENTES_KPI.get(gradiente, gradiente) if isinstance(gradiente, str) else gradiente
+        nota = f'<div class="agpx-kpi-nota">{t["nota"]}</div>' if t.get("nota") else ""
+        bloques.append(
+            f'<div class="agpx-kpi" style="background:linear-gradient(135deg,{claro},{oscuro})">'
+            f'<div class="agpx-kpi-label">{t["label"]}</div>'
+            f'<div class="agpx-kpi-valor">{t["valor"]}</div>{nota}</div>'
+        )
+    st.html(f'{_CSS_TARJETAS}<div class="agpx-kpis">{"".join(bloques)}</div>')

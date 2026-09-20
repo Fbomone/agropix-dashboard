@@ -11,6 +11,18 @@ VERDE, AZUL, AMBAR, GRIS, ROJO = "#2E7D32", "#1565C0", "#F9A825", "#90A4AE", "#C
 COLORES_UNIDAD = {SERVICIO: VERDE, EQUIPOS: AZUL}
 COLORES_COBRO = {COBRADO: VERDE, POR_COBRAR: AMBAR, EN_PROCESO: GRIS, CANCELADO: ROJO}
 
+# Tarjetas de KPI del Reporte General: gradientes (claro, oscuro) por metrica.
+# Son colores de fondo con texto blanco encima, asi que el tono claro tiene que
+# mantener contraste suficiente: el #90EE90 de la especificacion original daba
+# 1.4:1 con blanco (ilegible), por eso las hectareas van en verde oscuro.
+GRADIENTES_KPI = {
+    "cobradas": ("#00A651", "#00803E"),
+    "generadas": ("#1F77B4", "#155C8D"),
+    "por_cobrar": ("#E4700B", "#B85700"),
+    "hectareas": ("#3F7D3F", "#2C5C2C"),
+    "neutro": ("#546E7A", "#3E5561"),
+}
+
 # ---------------------------------------------------------------------------
 # Graficos
 # ---------------------------------------------------------------------------
