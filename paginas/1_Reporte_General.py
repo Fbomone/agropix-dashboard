@@ -13,7 +13,7 @@ from utils.data import (
 )
 from utils.format import (
     ALTO_GRAFICO, COLORES_COBRO, COLORES_MARCA, COLORES_UNIDAD, ETIQUETA_MONEDA, HOVER_MONEDA,
-    MES_PLOTLY, formatear_moneda, formatear_moneda_completa, formatear_numero, formatear_porcentaje,
+    FECHA_CORTA_PLOTLY, MES_PLOTLY, formatear_moneda, formatear_moneda_completa, formatear_numero, formatear_porcentaje,
 )
 from utils.ui import (
     columna_moneda, espacio_para_etiquetas, grafico, hay_datos, leyenda_estados, metricas,
@@ -26,13 +26,21 @@ unidades = datos["unidades"]
 ORDEN_UNIDADES = {"unidad_negocio": [SERVICIO, EQUIPOS]}
 
 
+EJE_FECHA = ("Semanal", "Mensual")
+
+
 def eje_x_periodo(periodos: pd.DataFrame, granularidad: str) -> str:
-    """Mensual usa eje de fechas; trimestral y anual, etiquetas como categorias."""
-    return "periodo" if granularidad == "Mensual" else "periodo_label"
+    """Semanal y mensual usan eje de fechas; trimestral y anual, etiquetas como categorias."""
+    return "periodo" if granularidad in EJE_FECHA else "periodo_label"
 
 
 def formatear_eje_periodo(fig, periodos: pd.DataFrame, granularidad: str):
-    if granularidad == "Mensual":
+    if granularidad == "Semanal":
+        # Con dos años son ~90 semanas: como categorias el eje queda ilegible
+        n = periodos["periodo"].nunique()
+        fig.update_xaxes(tickformat=FECHA_CORTA_PLOTLY,
+                         dtick=7 * 86_400_000 * (1 if n <= 12 else 4 if n <= 52 else 8))
+    elif granularidad == "Mensual":
         n = periodos["periodo"].nunique()
         fig.update_xaxes(tickformat=MES_PLOTLY, dtick="M1" if n <= 12 else "M3" if n <= 24 else "M6")
     else:

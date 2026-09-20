@@ -39,6 +39,7 @@ ETIQUETA_MONEDA = "$,.3s"  # texto sobre barras / porciones: "$383k"
 FORMATO_MONEDA_TABLA = "US$ %,.0f"
 FECHA_PLOTLY = "%d/%m/%Y"
 MES_PLOTLY = "%m/%Y"
+FECHA_CORTA_PLOTLY = "%d/%m"  # eje semanal: la etiqueta es el lunes de la semana
 
 # ---------------------------------------------------------------------------
 # Numeros

@@ -26,9 +26,12 @@ from utils.data import (
     kpis_equipos, kpis_servicios, resumen_operadores, resumen_por_modelo, vigentes,
 )
 from utils.format import (
-    AMBAR, AZUL, COLORES_COBRO, COLORES_UNIDAD, GRIS, MES_PLOTLY, PLOTLY_TEMPLATE, SEPARADORES_PLOTLY,
+    AMBAR, AZUL, COLORES_COBRO, COLORES_UNIDAD, FECHA_CORTA_PLOTLY, GRIS, MES_PLOTLY, PLOTLY_TEMPLATE, SEPARADORES_PLOTLY,
     TICK_MONEDA, VERDE, es_nulo, formatear_moneda_completa, formatear_numero, formatear_porcentaje,
 )
+
+# Granularidades cuyo eje x va como fecha; el resto va como categoria
+EJE_FECHA = ("Semanal", "Mensual")
 
 MAX_FILAS_TABLA = 15
 MARGEN = 1.5 * cm
@@ -278,8 +281,11 @@ def _preparar(fig, eje_moneda: str | None = "y", leyenda: str = "derecha"):
 def _eje_periodo(fig, periodos: pd.DataFrame, granularidad: str):
     # separa las fechas del eje para que la primera no se pise con el "$0" del eje vertical
     fig.update_xaxes(ticklabelstandoff=6)
-    if granularidad == "Mensual":
-        n = periodos["periodo"].nunique()
+    n = periodos["periodo"].nunique()
+    if granularidad == "Semanal":
+        fig.update_xaxes(tickformat=FECHA_CORTA_PLOTLY,
+                         dtick=7 * 86_400_000 * (1 if n <= 10 else 4 if n <= 40 else 8))
+    elif granularidad == "Mensual":
         fig.update_xaxes(tickformat=MES_PLOTLY, dtick="M1" if n <= 12 else "M3" if n <= 24 else "M6")
     else:
         fig.update_xaxes(type="category", categoryorder="array", categoryarray=periodos["periodo_label"].tolist())
@@ -336,7 +342,7 @@ def _seccion_general(datos: dict, filtros: dict):
     granularidad = filtros.get("granularidad") or "Mensual"
     kc = kpis_consolidado(servicios, ops)
     periodos = ingresos_por_periodo(servicios, ops, granularidad)
-    x = "periodo" if granularidad == "Mensual" else "periodo_label"
+    x = "periodo" if granularidad in EJE_FECHA else "periodo_label"
 
     figuras = {}
     if kc["ingreso_total"] > 0:

@@ -45,7 +45,7 @@ ESTADOS_TRABAJO = [
 ESTADOS_TRABAJO_EJECUTADO = ["Cobro recibido", "Facturado esperando cobro", "Trabajo realizado"]
 SIN_ESTADO = "(sin estado)"
 
-GRANULARIDADES = {"Mensual": "M", "Trimestral": "Q", "Anual": "Y"}
+GRANULARIDADES = {"Semanal": "W-SUN", "Mensual": "M", "Trimestral": "Q", "Anual": "Y"}
 
 # Columnas que consume el codigo: campo interno -> nombres aceptados en el Sheet.
 # El matcheo ignora tildes, mayusculas y espacios de mas (ver col()).
@@ -965,8 +965,11 @@ def columna_periodo(fechas: pd.Series, granularidad: str = "Mensual") -> pd.Seri
 
 
 def etiqueta_periodo(periodos: pd.Series, granularidad: str = "Mensual") -> pd.Series:
-    """'03/2025', 'T1 2025' o '2025'."""
+    """'Sem 08/09', '03/2025', 'T1 2025' o '2025'."""
     p = pd.to_datetime(pd.Series(periodos)).reset_index(drop=True)
+    if granularidad == "Semanal":
+        # to_timestamp() de un periodo W-SUN devuelve el lunes de esa semana
+        return "Sem " + p.dt.strftime("%d/%m")
     if granularidad == "Trimestral":
         return "T" + p.dt.quarter.astype(str) + " " + p.dt.year.astype(str)
     if granularidad == "Anual":
