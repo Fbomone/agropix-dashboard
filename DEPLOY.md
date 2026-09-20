@@ -147,11 +147,59 @@ scheduler externo, que Community Cloud no tiene.
 
 ---
 
-## 6. Tests
+## 6. Reporte semanal automático (GitHub Actions)
+
+Viernes 9:30 ART, a los 7 destinatarios, con el PDF de 4 carillas adjunto.
+
+**Por qué no corre dentro de la app:** Streamlit Community Cloud duerme la app
+cuando nadie la visita y mata el proceso. Un scheduler con `schedule` en un
+thread se muere con ella y no se despierta solo: los viernes sin visitas el mail
+no saldría, y sin aviso. El cron de Actions corre en GitHub, no depende de que
+la app esté viva.
+
+`.github/workflows/reporte-semanal.yml` → cron `30 12 * * 5`. Argentina usa
+UTC-3 todo el año (no mueve los relojes desde 2009), así que 12:30 UTC = 9:30 ART
+de forma estable.
+
+### Secrets que hay que cargar en GitHub
+
+Settings → Secrets and variables → Actions → *New repository secret*:
+
+| Secret | Qué es |
+|---|---|
+| `GOOGLE_CREDENTIALS_JSON` | el contenido completo de `credentials.json`, pegado tal cual |
+| `CRM_SHEET_ID`, `VENTAS_SHEET_ID` | los IDs de los dos Sheets |
+| `CRM_TAB`, `VENTAS_TAB` | `Trabajos` y `Ventas` |
+| `SENDGRID_API_KEY` | la API key real (no el placeholder) |
+| `EMAIL_REMITENTE` | Single Sender verificado en SendGrid |
+| `EMAIL_DESTINATARIOS` | opcional: reemplaza la lista de `utils/reporte_semanal.py` |
+
+Son **secrets de GitHub**, aparte de los de Streamlit Cloud: son dos entornos
+distintos y cada uno necesita los suyos.
+
+### Probarlo sin esperar al viernes
+
+Actions → *Reporte semanal Agropix* → **Run workflow**, con `dry_run` en `true`:
+genera el PDF y lo deja como artifact descargable, sin enviar nada. En local:
+
+```bash
+python scripts/enviar_reporte_semanal.py --dry-run --desde 2026-09-07 --hasta 2026-09-13
+# deja el PDF y el HTML del mail en ./salida/
+```
+
+El período por defecto es la **última semana completa** (lunes a domingo), no
+lunes-a-hoy: así los números son comparables entre envíos.
+
+Si la semana no tuvo movimiento el mail se manda igual, diciéndolo. Un silencio
+no se distingue de un envío que falló.
+
+---
+
+## 7. Tests
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                                     # 96 tests, ninguno se saltea
+pytest                                    # 162 tests, ninguno se saltea
 
 # Incluyendo los que necesitan las contraseñas reales:
 AGROPIX_TEST_PASS_DUENO='...' AGROPIX_TEST_PASS_GERENTE='...' \

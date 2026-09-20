@@ -466,7 +466,7 @@ def _paginas_pdf(pdf: bytes) -> int:
     return len(re.findall(rb"/Type\s*/Page[^s]", pdf))
 
 
-def test_generar_pdf_arma_las_tres_paginas(monkeypatch):
+def test_generar_pdf_arma_las_cuatro_paginas(monkeypatch):
     import utils.pdf as pdf_mod
 
     exportadas = {}
@@ -483,8 +483,10 @@ def test_generar_pdf_arma_las_tres_paginas(monkeypatch):
     pdf = pdf_mod.generar_pdf(_datos_para_pdf(), filtros)
 
     assert pdf.startswith(b"%PDF")
-    assert _paginas_pdf(pdf) == 3
-    assert {"general_evolucion", "servicios_has_operador", "equipos_unidades"} <= set(exportadas)
+    # General, Equipos, Servicios y Resumen de cobros
+    assert _paginas_pdf(pdf) == 4
+    assert {"general_evolucion", "servicios_has_operador", "equipos_unidades",
+            "cobros_estado", "cobros_evolucion"} <= set(exportadas)
 
 
 def test_generar_pdf_sin_datos_no_rompe(monkeypatch):
@@ -495,7 +497,7 @@ def test_generar_pdf_sin_datos_no_rompe(monkeypatch):
 
     pdf = pdf_mod.generar_pdf(datos, {"estados_trabajo": []})
 
-    assert pdf.startswith(b"%PDF") and _paginas_pdf(pdf) == 3
+    assert pdf.startswith(b"%PDF") and _paginas_pdf(pdf) == 4
 
 
 def test_pdf_error_claro_si_no_esta_kaleido(monkeypatch):

@@ -18,6 +18,9 @@ from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.platypus import HRFlowable, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from utils.comisiones import (
+    comisiones_por_canal, comisiones_por_mes, kpis_comisiones, ranking_vendedores,
+)
 from utils.data import (
     COBRADO, EQUIPOS, POR_COBRAR, SERVICIO, columna_mes, ingresos_por_periodo, kpis_consolidado,
     kpis_equipos, kpis_servicios, resumen_operadores, resumen_por_modelo, vigentes,
@@ -600,8 +603,82 @@ def _canvas_numerado(generado: datetime):
     return CanvasNumerado
 
 
+def _seccion_cobros(datos: dict, filtros: dict):
+    """Cuarta carilla: estado de las comisiones, evolucion del cobro y cortes."""
+    servicios, ops = datos["servicios"], datos["equipos"]
+    k = kpis_comisiones(servicios, ops)
+    mensual = comisiones_por_mes(servicios, ops)
+    canal = comisiones_por_canal(ops)
+    vendedores = ranking_vendedores(ops)
+
+    figuras = {}
+    if k["comision_generada"] > 0:
+        estado = pd.DataFrame({
+            "estado": ["Cobradas", "Por cobrar"],
+            "monto": [k["comision_cobrada"], k["por_cobrar"]],
+        })
+        fig = px.pie(estado[estado["monto"] > 0], values="monto", names="estado", hole=0.45,
+                     color="estado", color_discrete_map={"Cobradas": VERDE, "Por cobrar": AMBAR})
+        fig.update_traces(sort=False, texttemplate="%{label}<br>%{percent:.1%}", textposition="inside",
+                          textfont=dict(color="white", size=12))
+        fig.update_layout(showlegend=False)
+        figuras["cobros_estado"] = (_preparar(fig, eje_moneda=None), 5.6, ALTO_GENERAL)
+
+    if not mensual.empty:
+        largo = mensual.melt(id_vars="mes", value_vars=["cobrada", "por_cobrar"],
+                             var_name="estado", value_name="monto")
+        largo["estado"] = largo["estado"].map({"cobrada": "Cobradas", "por_cobrar": "Por cobrar"})
+        fig = px.bar(largo, x="mes", y="monto", color="estado",
+                     color_discrete_map={"Cobradas": VERDE, "Por cobrar": AMBAR},
+                     category_orders={"estado": ["Cobradas", "Por cobrar"]},
+                     labels={"mes": "", "monto": "", "estado": ""})
+        fig.update_xaxes(tickformat=MES_PLOTLY)
+        figuras["cobros_evolucion"] = (_preparar(fig, "y", leyenda="arriba"), 12.0, ALTO_GENERAL)
+
+    def armar(pngs: dict, generado: datetime) -> list:
+        historia = _encabezado("Resumen de cobros", filtros, generado)
+        historia += _tarjetas([
+            dict(label="Comisiones cobradas", valor=_f_moneda(k["comision_cobrada"]),
+                 sub=f"{_f_pct(k['pct_cobranza'])} de lo generado", color=VERDE),
+            dict(label="Comisiones generadas", valor=_f_moneda(k["comision_generada"]),
+                 sub=f"equipos {_f_moneda(k['generada_equipos'])} · servicios {_f_moneda(k['generado_servicios'])}",
+                 color=AZUL),
+            dict(label="Por cobrar", valor=_f_moneda(k["por_cobrar"]),
+                 sub=f"equipos {_f_moneda(k['por_cobrar_equipos'])} · servicios {_f_moneda(k['por_cobrar_servicios'])}",
+                 color=AMBAR),
+        ], columnas=3)
+        historia += _fila_graficos(pngs, [
+            ("cobros_estado", "Estado de las comisiones", 5.6, ALTO_GENERAL),
+            ("cobros_evolucion", "Cobrado y por cobrar por mes", 12.0, ALTO_GENERAL),
+        ])
+        historia.append(Paragraph("Comisiones por canal (origen del lead)", ESTILOS["seccion"]))
+        historia += _tabla(canal, [
+            ("canal", "Canal", _f_texto, False, 3),
+            ("comision_cobrada", "Cobrada", _f_moneda, True, 2),
+            ("comision_generada", "Generada", _f_moneda, True, 2),
+            ("por_cobrar", "Por cobrar", _f_moneda, True, 2),
+            ("pct_cobranza", "% cobro", _f_pct, True, 1.4),
+            ("operaciones", "Ops.", _f_numero, True, 1),
+        ], AZUL)
+        historia.append(Paragraph("Vendedores por comisión cobrada (solo equipos)", ESTILOS["seccion"]))
+        historia += _tabla(vendedores, [
+            ("vendedor", "Vendedor", _f_texto, False, 3),
+            ("comision_cobrada", "Cobrada", _f_moneda, True, 2),
+            ("comision_generada", "Generada", _f_moneda, True, 2),
+            ("por_cobrar", "Por cobrar", _f_moneda, True, 2),
+            ("pct_cobranza", "% cobro", _f_pct, True, 1.4),
+            ("unidades", "Equipos", _f_numero, True, 1),
+        ], VERDE)
+        historia.append(Paragraph(
+            "El CRM de servicios no registra vendedor (trae Operador 1..4, que es quien ejecuta el "
+            "trabajo), así que el ranking de vendedores es solo de venta de equipos.", ESTILOS["nota"]))
+        return historia
+
+    return figuras, armar
+
+
 def generar_pdf(datos: dict, filtros: dict | None = None) -> bytes:
-    """PDF A4 vertical con Reporte General, Venta de Servicios y Venta de Equipos.
+    """PDF A4 vertical de 4 carillas: General, Equipos, Servicios y Resumen de cobros.
 
     datos: lo que ve el dashboard, ya filtrado (salida de utils.data.aplicar_filtros).
     filtros: desde, hasta, estados_trabajo, estados_opciones, operadores, granularidad y,
@@ -612,7 +689,8 @@ def generar_pdf(datos: dict, filtros: dict | None = None) -> bytes:
     filtros = dict(filtros or {})
     generado = filtros.get("generado") or _ahora()
 
-    secciones = [_seccion_general(datos, filtros), _seccion_servicios(datos, filtros), _seccion_equipos(datos, filtros)]
+    secciones = [_seccion_general(datos, filtros), _seccion_equipos(datos, filtros),
+                 _seccion_servicios(datos, filtros), _seccion_cobros(datos, filtros)]
     figuras = {nombre: spec for figs, _ in secciones for nombre, spec in figs.items()}
     pngs = _exportar_png(figuras) if figuras else {}
 

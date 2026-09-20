@@ -15,3 +15,4 @@ data/auditoria.log
 *.json
 # Excepto los que la app necesita para arrancar.
 !precios_lista.json
+salida/

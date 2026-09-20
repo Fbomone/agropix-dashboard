@@ -67,8 +67,12 @@ def enviar_reporte(
     destinatarios: list[str] | None = None,
     asunto: str = ASUNTO_POR_DEFECTO,
     intro: str = "Adjuntamos el reporte del dashboard con los filtros aplicados.",
+    html: str | None = None,
 ) -> list[str]:
     """Manda el PDF adjunto por SendGrid. Devuelve los destinatarios efectivos.
+
+    html: cuerpo completo del mail. Si se omite se usa CUERPO_HTML con `intro` y
+    `periodo`; el reporte semanal pasa el suyo, armado en utils/reporte_semanal.py.
 
     Levanta ErrorEnvioEmail con un texto legible si falta configuracion o si la
     API rechaza el envio.
@@ -89,7 +93,7 @@ def enviar_reporte(
         from_email=EMAIL_REMITENTE,
         to_emails=destino,
         subject=asunto,
-        html_content=CUERPO_HTML.format(
+        html_content=html or CUERPO_HTML.format(
             intro=intro,
             periodo=periodo or "todo el histórico",
             momento=datetime.now().strftime("%d/%m/%Y %H:%M"),
