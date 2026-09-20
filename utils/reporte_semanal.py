@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from config.settings import URL_APP
 from utils.comisiones import kpis_comisiones, top_clientes
 
 TZ_ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -39,8 +40,6 @@ DESTINATARIOS = (
     "infoagropix@gmail.com",
     "matias21tossen@gmail.com",
 )
-
-URL_APP = "https://agropix-dashboard.streamlit.app"
 
 
 # ---------------------------------------------------------------------------
