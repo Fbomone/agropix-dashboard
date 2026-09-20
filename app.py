@@ -1,11 +1,12 @@
 import streamlit as st
 
-from utils.auth import check_authentication, logout_button
+from utils.auth import check_authentication, logout_button, sesion_es_admin
 from utils.data import (
     ESTADOS_TRABAJO_EJECUTADO, aplicar_filtros, cantidad_alertas, cargar_crudos, cargar_precios,
     construir_datos, opciones_estado_trabajo, rango_fechas,
 )
 from utils.ui import aplicar_tema
+from utils.version import resumen_entorno
 
 st.set_page_config(page_title="Agropix Dashboard", page_icon="🌱", layout="wide")
 aplicar_tema()
@@ -43,12 +44,17 @@ st.html(f"""
 # La carpeta NO se llama "pages/": con ese nombre Streamlit activa la navegacion
 # vieja y una URL directa a una pagina la ejecuta sin pasar por este archivo.
 pagina_config = st.Page("paginas/4_Configuracion.py", title="Configuración", icon="⚙️")
-paginas = st.navigation([
+lista_paginas = [
     st.Page("paginas/1_Reporte_General.py", title="Reporte General", icon="📊", default=True),
     st.Page("paginas/2_Venta_Servicios.py", title="Venta de Servicios", icon="🚜"),
     st.Page("paginas/3_Venta_Equipos.py", title="Venta de Equipos", icon="🛸"),
     pagina_config,
-])
+]
+# El panel de administracion solo se declara para admins: una pagina que no esta
+# en st.navigation no tiene URL, asi que no queda accesible tipeandola.
+if sesion_es_admin():
+    lista_paginas.append(st.Page("paginas/0_Admin.py", title="Administración", icon="⚙️"))
+paginas = st.navigation(lista_paginas)
 
 try:
     crm_df, ventas_df = cargar_crudos()
@@ -156,6 +162,15 @@ with st.sidebar:
         st.caption("Cambiaron los filtros: volvé a exportar para actualizar el PDF.")
 
     logout_button()
+
+    with st.expander("ℹ️ Información"):
+        entorno = resumen_entorno()
+        st.caption(f"**Versión:** {entorno['Versión de la app']} · {entorno['Fecha de la versión']}")
+        st.caption(f"**Usuario:** {usuario['email']}")
+        st.caption(f"**Rol:** {'administrador' if usuario['rol'] == 'admin' else 'usuario'}")
+        st.caption(f"**Streamlit:** {entorno['streamlit']} · **Python:** {entorno['Python']}")
+        st.caption("Los datos se leen de Google Sheets en vivo; «🔄 Actualizar datos» "
+                   "vacía la caché y vuelve a leerlos.")
 
 paginas.run()
 

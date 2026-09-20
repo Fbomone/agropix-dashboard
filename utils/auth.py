@@ -61,11 +61,26 @@ SECCION_SECRETS = "auth_users"
 # Quien puede entrar. El valor es la clave dentro de [auth_users]: es el email
 # con "@" y "." cambiados por "_", porque TOML no los admite en una clave simple.
 # Para dar de alta a alguien: agregar la linea aca y su contrasena en los secrets.
+# Sin contrasena cargada el email queda listado pero no entra (ver cargar_usuarios).
 EMAILS_AUTORIZADOS: dict[str, str] = {
     "francobomone14@gmail.com": "francobomone14_gmail_com",
     "infoagropix@gmail.com": "infoagropix_gmail_com",
     "matias21tossen@gmail.com": "matias21tossen_gmail_com",
+    "fabiocailletbois@gmail.com": "fabiocailletbois_gmail_com",
+    "ggaletto.gg@gmail.com": "ggaletto_gg_gmail_com",
+    "ignacio.ramello879@gmail.com": "ignacio_ramello879_gmail_com",
+    "nicotobaldi55@gmail.com": "nicotobaldi55_gmail_com",
+    "nfoagropix@gmail.com": "nfoagropix_gmail_com",
 }
+
+# Acceso al panel de administracion. Todos los demas ven el mismo dashboard: el
+# rol solo habilita el panel, no cambia los datos que se muestran.
+#
+# "nfoagropix@" (sin la i) aparece en la especificacion como admin y remitente;
+# "infoagropix@" es el usuario que veniamos usando. Estan los dos porque no sabemos
+# cual es la direccion real, y tener de mas no abre ningun agujero: sin contrasena
+# cargada en los secrets ninguno de los dos entra.
+ADMINS: tuple[str, ...] = ("infoagropix@gmail.com", "nfoagropix@gmail.com")
 
 # ---------------------------------------------------------------------------
 # Auditoria
@@ -131,23 +146,29 @@ def normalizar_email(email: str) -> str:
     return unicodedata.normalize("NFC", (email or "").strip().lower())
 
 
+def es_admin(email: str) -> bool:
+    """True si el email tiene acceso al panel de administracion."""
+    return normalizar_email(email) in ADMINS
+
+
 def verificar_credenciales(email: str, password: str) -> dict[str, str] | None:
     """Datos del usuario si el par email/contrasena es valido, sino None."""
     if not password:
         return None
-    esperada = cargar_usuarios().get(normalizar_email(email))
+    limpio = normalizar_email(email)
+    esperada = cargar_usuarios().get(limpio)
     if not esperada:
         return None
     # compare_digest: comparacion de tiempo constante
     if hmac.compare_digest(password.encode("utf-8"), esperada.encode("utf-8")):
-        return {"email": normalizar_email(email)}
+        return {"email": limpio, "rol": "admin" if es_admin(limpio) else "usuario"}
     return None
 
 
 # ---------------------------------------------------------------------------
 # Estado de la sesion
 # ---------------------------------------------------------------------------
-CLAVES_SESION = ("auth_ok", "auth_email", "auth_inicio", "auth_ultimo_uso")
+CLAVES_SESION = ("auth_ok", "auth_email", "auth_rol", "auth_inicio", "auth_ultimo_uso")
 
 # Datos del cliente cacheados en la sesion: no deben sobrevivir al logout
 CLAVES_DATOS = ("datos", "datos_completos", "_pdf")
@@ -185,10 +206,17 @@ def sesion_valida() -> bool:
 
 
 def usuario_actual() -> dict[str, str] | None:
-    """Datos del usuario logueado, o None si no hay sesion."""
+    """Datos del usuario logueado (email, rol), o None si no hay sesion."""
     if not st.session_state.get("auth_ok"):
         return None
-    return {"email": st.session_state.get("auth_email", "")}
+    return {"email": st.session_state.get("auth_email", ""),
+            "rol": st.session_state.get("auth_rol", "usuario")}
+
+
+def sesion_es_admin() -> bool:
+    """True si quien esta logueado puede ver el panel de administracion."""
+    usuario = usuario_actual()
+    return bool(usuario) and usuario["rol"] == "admin"
 
 
 def _bloqueado() -> bool:
@@ -289,11 +317,12 @@ def login_page() -> None:
                 st.session_state.update(
                     auth_ok=True,
                     auth_email=usuario["email"],
+                    auth_rol=usuario["rol"],
                     auth_inicio=ahora,
                     auth_ultimo_uso=ahora,
                     auth_intentos=0,
                 )
-                audit_log("login_ok", usuario["email"])
+                audit_log("login_ok", usuario["email"], usuario["rol"])
                 st.balloons()
                 st.rerun()
             else:
@@ -334,6 +363,7 @@ def logout_button() -> None:
         return
     st.divider()
     st.caption(f"👤 {usuario['email']}")
+    st.caption(f"🔐 {'Administrador' if usuario['rol'] == 'admin' else 'Usuario'}")
     st.caption(f"⏳ La sesión se cierra tras {_minutos_restantes()} min sin actividad.")
     if st.button("🚪 Cerrar sesión", width="stretch", key="agpx_logout"):
         cerrar_sesion("logout")

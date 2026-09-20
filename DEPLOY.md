@@ -32,11 +32,27 @@ Sin esa sección no entra nadie: no hay usuario de emergencia ni contraseña por
 defecto en el código. La pantalla de login lo avisa explícitamente en vez de
 rechazar los intentos como si fueran contraseñas equivocadas.
 
-| Usuario | Clave en `[auth_users]` |
-|---|---|
-| `francobomone14@gmail.com` | `francobomone14_gmail_com` |
-| `infoagropix@gmail.com` | `infoagropix_gmail_com` |
-| `matias21tossen@gmail.com` | `matias21tossen_gmail_com` |
+| Usuario | Clave en `[auth_users]` | Rol |
+|---|---|---|
+| `francobomone14@gmail.com` | `francobomone14_gmail_com` | usuario |
+| `infoagropix@gmail.com` | `infoagropix_gmail_com` | **admin** |
+| `nfoagropix@gmail.com` | `nfoagropix_gmail_com` | **admin** |
+| `matias21tossen@gmail.com` | `matias21tossen_gmail_com` | usuario |
+| `fabiocailletbois@gmail.com` | `fabiocailletbois_gmail_com` | usuario |
+| `ggaletto.gg@gmail.com` | `ggaletto_gg_gmail_com` | usuario |
+| `ignacio.ramello879@gmail.com` | `ignacio_ramello879_gmail_com` | usuario |
+| `nicotobaldi55@gmail.com` | `nicotobaldi55_gmail_com` | usuario |
+
+Los 5 usuarios nuevos **todavía no tienen contraseña en los secrets**: figuran en
+la lista pero no pueden entrar hasta que se les cargue una. El panel de
+administración, pestaña *Validación*, muestra cuáles están habilitados.
+
+`nfoagropix@` (sin la "i") y `infoagropix@` están los dos como admin porque la
+especificación usa el primero y veníamos usando el segundo. Tener el de más no
+abre nada: sin contraseña en los secrets ninguno entra.
+
+El rol sólo habilita el panel de administración; los datos que ve cada uno son
+los mismos.
 
 La clave del secret es el email con `@` y `.` cambiados por `_`, porque TOML no
 los acepta en una clave simple.
@@ -147,7 +163,35 @@ scheduler externo, que Community Cloud no tiene.
 
 ---
 
-## 6. Reporte semanal automático (GitHub Actions)
+## 6. Panel de administración
+
+Sólo para los admins, en la barra de navegación como **Administración**. Cuatro
+pestañas:
+
+| Pestaña | Para qué |
+|---|---|
+| **Envío de prueba** | Genera el PDF de un período y lo manda, con resultado por destinatario. Arranca con sólo el admin tildado. |
+| **Validación** | Consulta la API de SendGrid sin enviar nada: comprueba la key y que el remitente esté verificado. Lista qué usuarios tienen contraseña cargada. |
+| **Historial** | Los envíos registrados, con estado OK / parcial / error y el detalle por destinatario. |
+| **Sistema** | Versión de la app, versiones reales de Python y las librerías, filas leídas de cada Sheet, período cubierto, últimos accesos y un reporte técnico descargable. |
+
+**La página no está en `pages/`.** Con esa carpeta Streamlit arma su navegación
+vieja y una URL directa ejecuta la página *sin pasar por app.py*: el panel
+quedaría accesible sin login. Acá `app.py` sólo la declara cuando la sesión es de
+un admin, así que para el resto no existe ni como URL — y la página revalida el
+rol por su cuenta.
+
+El envío del panel manda **un mail por destinatario** en vez de uno con siete
+destinatarios: cuesta siete llamadas pero permite decir exactamente a quién
+llegó. Con 7 destinatarios el plan gratis (100/día) no se mueve.
+
+El historial vive en `data/envios.jsonl`, que en Streamlit Cloud **se borra en
+cada reinicio**. Lo que persiste son los logs de *Manage app → Logs* y el
+Activity Feed de SendGrid.
+
+---
+
+## 7. Reporte semanal automático (GitHub Actions)
 
 Viernes 9:30 ART, a los 7 destinatarios, con el PDF de 4 carillas adjunto.
 
@@ -195,11 +239,11 @@ no se distingue de un envío que falló.
 
 ---
 
-## 7. Tests
+## 8. Tests
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                                    # 162 tests, ninguno se saltea
+pytest                                    # 194 tests, ninguno se saltea
 
 # Incluyendo los que necesitan las contraseñas reales:
 AGROPIX_TEST_PASS_DUENO='...' AGROPIX_TEST_PASS_GERENTE='...' \

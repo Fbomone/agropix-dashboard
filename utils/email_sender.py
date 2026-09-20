@@ -116,3 +116,114 @@ def enviar_reporte(
         raise ErrorEnvioEmail(f"SendGrid respondió {respuesta.status_code}.")
     _logger.info("Reporte enviado a %s (%s)", destino, respuesta.status_code)
     return list(destino)
+
+
+# ---------------------------------------------------------------------------
+# Validacion de la configuracion (panel de administracion)
+# ---------------------------------------------------------------------------
+def validar_conexion() -> dict:
+    """Comprueba contra la API de SendGrid que la key y el remitente sirvan.
+
+    No manda ningun mail: consulta los Verified Senders. Es el equivalente al
+    "probar conexion" de SMTP, pero para una API HTTP: lo que puede fallar es la
+    key (401/403) o que el remitente no este verificado, que es el motivo mas
+    comun de un 403 al enviar con una key valida.
+
+    Devuelve {exitoso, mensaje, detalles} para pintarlo directo en pantalla.
+    """
+    listo, motivo = configurado()
+    if not listo:
+        return {"exitoso": False, "mensaje": motivo,
+                "detalles": {"configuracion": "incompleta"}}
+
+    detalles = {
+        "proveedor": "SendGrid (HTTPS, API v3)",
+        "remitente": EMAIL_REMITENTE,
+        "destinatarios": len(EMAIL_DESTINATARIOS),
+        "api_key": f"{SENDGRID_API_KEY[:6]}…{SENDGRID_API_KEY[-4:]}",
+        "verificado": datetime.now().strftime("%d/%m/%Y %H:%M"),
+    }
+
+    from python_http_client.exceptions import HTTPError
+    from sendgrid import SendGridAPIClient
+
+    try:
+        respuesta = SendGridAPIClient(SENDGRID_API_KEY).client.verified_senders.get()
+    except HTTPError as e:
+        codigo = getattr(e, "status_code", "?")
+        mensaje = {
+            401: "La API key de SendGrid es inválida o fue revocada.",
+            403: "La API key no tiene permiso para leer los remitentes verificados. "
+                 "Puede servir igual para enviar: probá con un envío a un solo destinatario.",
+        }.get(codigo, f"SendGrid respondió {codigo}.")
+        detalles["error"] = f"HTTP {codigo}"
+        return {"exitoso": False, "mensaje": mensaje, "detalles": detalles}
+    except Exception as e:
+        detalles["error"] = type(e).__name__
+        return {"exitoso": False, "mensaje": f"No se pudo contactar a SendGrid: {e}",
+                "detalles": detalles}
+
+    remitentes = _emails_verificados(respuesta)
+    detalles["remitentes_verificados"] = ", ".join(remitentes) or "ninguno"
+    if remitentes and EMAIL_REMITENTE.lower() not in {r.lower() for r in remitentes}:
+        return {
+            "exitoso": False,
+            "mensaje": f"La API key funciona, pero «{EMAIL_REMITENTE}» no está entre los "
+                       "remitentes verificados: SendGrid va a rechazar el envío con 403. "
+                       "Verificalo en Settings → Sender Authentication.",
+            "detalles": detalles,
+        }
+    return {"exitoso": True, "mensaje": "API key válida y remitente verificado.",
+            "detalles": detalles}
+
+
+def _emails_verificados(respuesta) -> list[str]:
+    """Extrae los emails de la respuesta de verified_senders, sin asumir su forma."""
+    import json
+
+    try:
+        cuerpo = json.loads(respuesta.body.decode() if isinstance(respuesta.body, bytes)
+                            else respuesta.body)
+    except Exception:
+        return []
+    items = cuerpo.get("results", cuerpo) if isinstance(cuerpo, dict) else cuerpo
+    if not isinstance(items, list):
+        return []
+    return [str(i.get("from_email")) for i in items
+            if isinstance(i, dict) and i.get("from_email")]
+
+
+def enviar_individual(
+    pdf_bytes: bytes,
+    nombre_archivo: str,
+    destinatarios: list[str],
+    asunto: str = ASUNTO_POR_DEFECTO,
+    html: str | None = None,
+    periodo: str = "",
+) -> dict:
+    """Manda un mail por destinatario y devuelve el resultado de cada uno.
+
+    Un envio con varios "to" es una sola llamada: si falla, falla para todos y no
+    se sabe quien recibio. Uno por uno cuesta N llamadas pero permite decir
+    exactamente a quien llego, que es lo que necesita el panel de envios.
+    El plan gratis admite 100 mails por dia: 7 destinatarios no lo mueven.
+    """
+    detalle = []
+    for email in destinatarios:
+        momento = datetime.now().isoformat(timespec="seconds")
+        try:
+            enviar_reporte(pdf_bytes, nombre_archivo, periodo=periodo,
+                           destinatarios=[email], asunto=asunto, html=html)
+            detalle.append({"email": email, "exitoso": True, "momento": momento})
+        except ErrorEnvioEmail as e:
+            _logger.error("Falló el envío a %s: %s", email, e)
+            detalle.append({"email": email, "exitoso": False, "momento": momento,
+                            "error": str(e)})
+
+    exitosos = sum(1 for d in detalle if d["exitoso"])
+    return {
+        "exitosos": exitosos,
+        "fallidos": len(detalle) - exitosos,
+        "total": len(detalle),
+        "detalle": detalle,
+    }

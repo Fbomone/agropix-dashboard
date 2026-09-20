@@ -17,6 +17,10 @@ SECRETS_FALSOS = {
     "francobomone14_gmail_com": "clave-de-prueba-franco",
     "infoagropix_gmail_com": "clave-de-prueba-info",
     "matias21tossen_gmail_com": "clave-de-prueba-matias",
+    "fabiocailletbois_gmail_com": "clave-de-prueba-fabio",
+    "ggaletto_gg_gmail_com": "clave-de-prueba-german",
+    "ignacio_ramello879_gmail_com": "clave-de-prueba-ignacio",
+    "nicotobaldi55_gmail_com": "clave-de-prueba-nico",
 }
 
 
@@ -39,6 +43,10 @@ def test_cargar_usuarios_mapea_las_claves_toml_a_emails(secrets):
         "francobomone14@gmail.com",
         "infoagropix@gmail.com",
         "matias21tossen@gmail.com",
+        "fabiocailletbois@gmail.com",
+        "ggaletto.gg@gmail.com",
+        "ignacio.ramello879@gmail.com",
+        "nicotobaldi55@gmail.com",
     }
 
 
@@ -100,10 +108,14 @@ def test_el_secrets_local_no_se_versiona():
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("email", [
     "francobomone14@gmail.com", "infoagropix@gmail.com", "matias21tossen@gmail.com",
+    "fabiocailletbois@gmail.com", "ggaletto.gg@gmail.com",
+    "ignacio.ramello879@gmail.com", "nicotobaldi55@gmail.com",
 ])
-def test_los_tres_usuarios_entran(secrets, email):
+def test_los_siete_usuarios_entran(secrets, email):
     clave = auth.cargar_usuarios()[email]
-    assert auth.verificar_credenciales(email, clave) == {"email": email}
+    usuario = auth.verificar_credenciales(email, clave)
+    assert usuario["email"] == email
+    assert usuario["rol"] == ("admin" if email in auth.ADMINS else "usuario")
 
 
 def test_email_se_normaliza(secrets):
@@ -183,3 +195,58 @@ def test_bloqueo_tras_cinco_intentos_fallidos(sesion):
     sesion["auth_bloqueo_hasta"] = datetime.now() - timedelta(seconds=1)  # bloqueo vencido
     assert auth._bloqueado() is False
     assert sesion["auth_intentos"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Rol de administrador
+# ---------------------------------------------------------------------------
+def test_los_admins_son_los_declarados():
+    assert auth.es_admin("infoagropix@gmail.com")
+    assert auth.es_admin("nfoagropix@gmail.com"), "la variante sin la i tambien es admin"
+
+
+@pytest.mark.parametrize("email", [
+    "francobomone14@gmail.com", "matias21tossen@gmail.com", "nicotobaldi55@gmail.com",
+])
+def test_el_resto_no_es_admin(email):
+    assert not auth.es_admin(email)
+
+
+def test_es_admin_normaliza_el_email():
+    assert auth.es_admin("  INFOAGROPIX@Gmail.com ")
+
+
+def test_todos_los_admins_estan_autorizados():
+    """Un admin que no este en EMAILS_AUTORIZADOS no podria ni loguearse."""
+    for email in auth.ADMINS:
+        assert email in auth.EMAILS_AUTORIZADOS
+
+
+def test_el_login_deja_el_rol_en_la_sesion(secrets, sesion, monkeypatch):
+    monkeypatch.setattr(auth, "_seccion_secrets",
+                        lambda _n: {"infoagropix_gmail_com": "clave-admin"})
+    usuario = auth.verificar_credenciales("infoagropix@gmail.com", "clave-admin")
+    assert usuario["rol"] == "admin"
+
+    sesion.update(auth_ok=True, auth_email=usuario["email"], auth_rol=usuario["rol"],
+                  auth_ultimo_uso=datetime.now())
+    assert auth.sesion_es_admin() is True
+    assert auth.usuario_actual()["rol"] == "admin"
+
+
+def test_un_usuario_comun_no_es_admin_en_la_sesion(sesion):
+    sesion.update(auth_ok=True, auth_email="matias21tossen@gmail.com", auth_rol="usuario",
+                  auth_ultimo_uso=datetime.now())
+    assert auth.sesion_es_admin() is False
+
+
+def test_sin_sesion_no_hay_admin(sesion):
+    assert auth.sesion_es_admin() is False
+
+
+def test_el_logout_borra_el_rol(sesion):
+    sesion.update(auth_ok=True, auth_email="infoagropix@gmail.com", auth_rol="admin",
+                  auth_ultimo_uso=datetime.now())
+    auth.cerrar_sesion()
+    assert "auth_rol" not in sesion
+    assert auth.sesion_es_admin() is False
