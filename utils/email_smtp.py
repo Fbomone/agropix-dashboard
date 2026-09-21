@@ -96,7 +96,15 @@ def enviar(destinatarios: list[str], asunto: str, html: str,
         raise RuntimeError(motivo)
 
     mensaje = EmailMessage()
-    mensaje["From"] = remitente or SMTP_USER
+    # Gmail exige que el From sea la casilla autenticada (o un alias verificado
+    # de esa casilla): si se manda otra direccion, la reescribe o rechaza el
+    # envio. Por eso un remitente distinto se ignora y queda como nombre visible,
+    # que es lo unico que Gmail sí respeta.
+    if remitente and remitente.strip().lower() != SMTP_USER.strip().lower():
+        _logger.info("Remitente %s ignorado: Gmail envía como %s", remitente, SMTP_USER)
+        mensaje["From"] = f"Agropix <{SMTP_USER}>"
+    else:
+        mensaje["From"] = SMTP_USER
     mensaje["To"] = ", ".join(destinatarios)
     mensaje["Subject"] = asunto
     # Alternativa en texto plano: algunos clientes y filtros antispam la piden

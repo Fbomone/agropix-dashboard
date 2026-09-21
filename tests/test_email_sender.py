@@ -176,3 +176,77 @@ def test_respuesta_de_error_de_la_api_se_traduce(configurado, monkeypatch):
     monkeypatch.setattr(sendgrid, "SendGridAPIClient", ClienteRechaza)
     with pytest.raises(email_sender.ErrorEnvioEmail, match="403"):
         email_sender.enviar_reporte(b"%PDF-1.4", "reporte.pdf")
+
+
+# ---------------------------------------------------------------------------
+# Remitente en Gmail
+# ---------------------------------------------------------------------------
+def test_gmail_envia_siempre_desde_la_casilla_autenticada(monkeypatch):
+    """Gmail reescribe o rechaza un From que no sea la cuenta autenticada."""
+    import smtplib
+
+    from utils import email_smtp
+
+    monkeypatch.setattr(email_smtp, "SMTP_USER", "infoagropix@gmail.com")
+    monkeypatch.setattr(email_smtp, "SMTP_PASSWORD", "abcd efgh ijkl mnop")
+    enviados = []
+
+    class ServidorFalso:
+        def send_message(self, mensaje):
+            enviados.append(mensaje)
+
+        def quit(self):
+            pass
+
+    monkeypatch.setattr(email_smtp, "_conectar", lambda: ServidorFalso())
+
+    # Un remitente ajeno queda como nombre visible, pero la direccion es la real
+    email_smtp.enviar(["x@agropix.com"], "Asunto", "<p>hola</p>", b"%PDF-1.4", "r.pdf",
+                      remitente="reportes@agropix.com")
+    assert enviados[0]["From"] == "Agropix <infoagropix@gmail.com>"
+
+    # Si coincide, va tal cual
+    email_smtp.enviar(["x@agropix.com"], "Asunto", "<p>hola</p>",
+                      remitente="infoagropix@gmail.com")
+    assert enviados[1]["From"] == "infoagropix@gmail.com"
+    assert smtplib  # el modulo real sigue importado, no se rompio nada
+
+
+def test_el_mail_lleva_html_y_texto_plano_y_el_pdf_adjunto(monkeypatch):
+    from utils import email_smtp
+
+    monkeypatch.setattr(email_smtp, "SMTP_USER", "infoagropix@gmail.com")
+    monkeypatch.setattr(email_smtp, "SMTP_PASSWORD", "abcd efgh ijkl mnop")
+    enviados = []
+
+    class ServidorFalso:
+        def send_message(self, mensaje):
+            enviados.append(mensaje)
+
+        def quit(self):
+            pass
+
+    monkeypatch.setattr(email_smtp, "_conectar", lambda: ServidorFalso())
+    email_smtp.enviar(["a@agropix.com", "b@agropix.com"], "Reporte", "<p>hola</p>",
+                      b"%PDF-1.4 contenido", "reporte_semanal.pdf")
+
+    mensaje = enviados[0]
+    assert mensaje["To"] == "a@agropix.com, b@agropix.com"
+    assert mensaje["Subject"] == "Reporte"
+    tipos = {p.get_content_type() for p in mensaje.walk()}
+    assert "text/html" in tipos and "text/plain" in tipos, "falta la alternativa en texto"
+    adjuntos = [p for p in mensaje.walk() if p.get_filename()]
+    assert adjuntos[0].get_filename() == "reporte_semanal.pdf"
+    assert adjuntos[0].get_payload(decode=True) == b"%PDF-1.4 contenido"
+
+
+def test_sin_app_password_no_intenta_conectar(monkeypatch):
+    from utils import email_smtp
+
+    monkeypatch.setattr(email_smtp, "SMTP_USER", "infoagropix@gmail.com")
+    monkeypatch.setattr(email_smtp, "SMTP_PASSWORD", "")
+    monkeypatch.setattr(email_smtp, "_conectar",
+                        lambda: pytest.fail("no debería intentar conectar"))
+    with pytest.raises(RuntimeError, match="App Password"):
+        email_smtp.enviar(["x@agropix.com"], "a", "<p>b</p>")
+    assert email_smtp.validar_conexion()["exitoso"] is False
