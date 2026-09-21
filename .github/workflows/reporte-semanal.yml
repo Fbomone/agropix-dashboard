@@ -37,6 +37,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Se chequea antes de instalar nada: si falta un secret, conviene enterarse
+      # en el segundo 10 y no en el minuto 5, con el PDF ya armado
+      - name: Verificar secrets
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          CRM_SHEET_ID: ${{ secrets.CRM_SHEET_ID }}
+          VENTAS_SHEET_ID: ${{ secrets.VENTAS_SHEET_ID }}
+        run: |
+          faltan=""
+          [ -z "$GOOGLE_CREDENTIALS_JSON" ] && faltan="$faltan GOOGLE_CREDENTIALS_JSON"
+          [ -z "$CRM_SHEET_ID" ] && faltan="$faltan CRM_SHEET_ID"
+          [ -z "$VENTAS_SHEET_ID" ] && faltan="$faltan VENTAS_SHEET_ID"
+          if [ -z "$SMTP_USER$SENDGRID_API_KEY" ]; then
+            faltan="$faltan SMTP_USER+SMTP_PASSWORD(o SENDGRID_API_KEY)"
+          elif [ -n "$SMTP_USER" ] && [ -z "$SMTP_PASSWORD" ]; then
+            faltan="$faltan SMTP_PASSWORD"
+          fi
+          if [ -n "$faltan" ]; then
+            echo "::error::Faltan secrets en Settings → Secrets and variables → Actions:$faltan"
+            exit 1
+          fi
+          echo "Todos los secrets necesarios están cargados."
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -64,19 +90,6 @@ jobs:
           fi
           printf '%s' "$GOOGLE_CREDENTIALS_JSON" > credentials.json
           python -c "import json; json.load(open('credentials.json')); print('credentials.json válido')"
-
-      - name: Verificar que haya vía de envío
-        env:
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
-        run: |
-          if [ -z "$SMTP_USER$SENDGRID_API_KEY" ]; then
-            echo "::error::Falta configurar el envío. Cargá SMTP_USER + SMTP_PASSWORD"
-            echo "::error::(App Password de Gmail) en Settings → Secrets → Actions."
-            exit 1
-          fi
-          echo "Vía de envío configurada."
 
       - name: Enviar reporte
         env:
