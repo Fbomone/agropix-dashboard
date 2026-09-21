@@ -4,11 +4,12 @@ import streamlit as st
 
 from utils.data import ESTADOS_COBRO, SERVICIO, columna_mes, kpis_servicios, resumen_operadores
 from utils.format import (
-    COLORES_UNIDAD, MES_PLOTLY, formatear_moneda, formatear_moneda_completa, formatear_numero,
+    COLORES_UNIDAD, MES_PLOTLY, formatear_moneda_card, formatear_numero,
     formatear_porcentaje,
 )
 from utils.ui import (
-    barras_por, columna_moneda, espacio_para_etiquetas, grafico, hay_datos, leyenda_estados, metricas,
+    barras_por, columna_moneda, espacio_para_etiquetas, grafico, hay_datos, leyenda_estados,
+    metricas, tarjetas_kpi,
 )
 
 COLOR = COLORES_UNIDAD[SERVICIO]
@@ -23,12 +24,16 @@ st.caption(f"🔎 {leyenda_estados(st.session_state.get('estados_trabajo'), st.s
 
 # El filtro de estado manda: si se eligen trabajos cancelados, se muestran
 k = kpis_servicios(s, solo_vigentes=False)
-metricas([
-    dict(label="Ventas totales", value=formatear_moneda(k["ventas"]), help=formatear_moneda_completa(k["ventas"])),
-    dict(label="Has trabajadas", value=f"{formatear_numero(k['hectareas'])} ha"),
-    dict(label="Clientes", value=formatear_numero(k["clientes"])),
-    dict(label="Ticket promedio", value=formatear_moneda(k["ticket_promedio"]),
-         help=formatear_moneda_completa(k["ticket_promedio"])),
+tarjetas_kpi([
+    dict(label="💰 Ventas totales", valor=formatear_moneda_card(k["ventas"]),
+         nota="En servicios el ingreso es todo lo facturado", gradiente="cobradas"),
+    dict(label="🌾 Has trabajadas", valor=f"{formatear_numero(k['hectareas'])} ha",
+         nota=f"{formatear_moneda_card(k['ventas'] / k['hectareas']) if k['hectareas'] else '—'} por ha",
+         gradiente="hectareas"),
+    dict(label="🎫 Ticket promedio", valor=formatear_moneda_card(k["ticket_promedio"]),
+         nota="Por trabajo", gradiente="generadas"),
+    dict(label="👥 Clientes", valor=formatear_numero(k["clientes"]),
+         nota="Con al menos una venta en el período", gradiente="neutro"),
 ])
 
 st.divider()

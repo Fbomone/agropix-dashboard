@@ -154,6 +154,60 @@ def _delta(variacion: float | None) -> str:
     return f"{signo}{_es_ar(abs(variacion) * 100, 1)} % vs. semana anterior"
 
 
+# Guia de lectura del reporte. Va en el mail porque el PDF llega adjunto y no
+# todos van a abrirlo: conviene que desde el mail se entienda que hay adentro y,
+# sobre todo, que significa cada numero (comision cobrada vs facturado es la
+# confusion cara de este negocio).
+_SECCION = """
+    <tr>
+      <td style="padding:9px 10px;border-bottom:1px solid #E5E9EC;vertical-align:top;width:34%">
+        <strong style="color:#2E7D32">{titulo}</strong>
+      </td>
+      <td style="padding:9px 10px;border-bottom:1px solid #E5E9EC;vertical-align:top;color:#41505E">
+        {detalle}
+      </td>
+    </tr>"""
+
+PAGINAS_PDF = [
+    ("1 · Reporte general",
+     "La foto de la semana: comisiones cobradas, generadas y por cobrar, más las hectáreas "
+     "trabajadas. Sirve para responder «¿cuánta plata entró?» sin abrir nada más."),
+    ("2 · Venta de equipos",
+     "Drones vendidos (Agras T y Mavic), comisión por modelo y ticket por equipo. Responde "
+     "«¿qué equipos dejan margen?». Los accesorios (MIXER JR, RTK, Pix4D) van aparte porque "
+     "no son drones y distorsionan el promedio."),
+    ("3 · Servicios prestados",
+     "Hectáreas por tipo de trabajo, clientes e ingreso por hectárea. Responde «¿el trabajo "
+     "aplicado está bien pago?». Acá el ingreso es todo lo facturado, no una comisión."),
+    ("4 · Resumen de cobros",
+     "Estado de las comisiones, evolución mensual de cobrado vs. por cobrar, y el corte por "
+     "canal y por vendedor. Responde «¿a quién hay que reclamarle?»."),
+]
+
+GUIA_CONTENIDO = """
+  <h3 style="font-size:15px;margin:26px 0 4px 0">Qué hay en el PDF adjunto</h3>
+  <p style="margin:0 0 10px 0;font-size:12px;color:#5D6D7E">
+    Cuatro carillas. En el link de arriba están los mismos números, filtrables por período.
+  </p>
+  <table width="100%" cellpadding="0" cellspacing="0"
+         style="border-collapse:collapse;font-size:12.5px;line-height:1.5">
+    {secciones}
+  </table>
+
+  <div style="margin:18px 0 0 0;padding:10px 12px;background:#F4F8F4;border-left:4px solid #2E7D32;
+              border-radius:4px;font-size:12px;color:#33413B;line-height:1.55">
+    <strong>Cómo leer los números.</strong>
+    <strong>Comisión cobrada</strong> es la plata que ya entró a Agropix: es la métrica que manda.
+    <strong>Generada</strong> es lo que se ganó aunque todavía no se haya cobrado, y la diferencia
+    entre las dos es lo que hay <strong>por cobrar</strong>.
+    El <strong>volumen intermediado</strong> (la factura del dron al cliente) aparece sólo como
+    referencia: de esa plata Agropix se queda únicamente con la comisión.
+    En servicios no hay comisión: ahí el ingreso es todo lo facturado.
+    Los trabajos cancelados y los equipos devueltos nunca suman.
+  </div>
+""".format(secciones="".join(_SECCION.format(titulo=t, detalle=d) for t, d in PAGINAS_PDF))
+
+
 # ---------------------------------------------------------------------------
 # Cuerpo del mail
 # ---------------------------------------------------------------------------
@@ -209,6 +263,8 @@ def cuerpo_html(k: dict, desde: date, hasta: date, clientes: pd.DataFrame | None
     Si el botón no funciona, copiá y pegá este link:<br>
     <a href="{url_app}" style="color:#1565C0;word-break:break-all">{url_app}</a>
   </p>
+
+{GUIA_CONTENIDO}
 
   <div style="border-left:4px solid #1565C0;background:#EEF4FB;color:#123B66;
               padding:10px 12px;border-radius:4px;font-size:12px;line-height:1.5">

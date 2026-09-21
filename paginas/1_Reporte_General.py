@@ -12,8 +12,9 @@ from utils.data import (
     ticket_por_mes, vigentes,
 )
 from utils.format import (
-    ALTO_GRAFICO, COLORES_COBRO, COLORES_MARCA, COLORES_UNIDAD, ETIQUETA_MONEDA, HOVER_MONEDA,
-    FECHA_CORTA_PLOTLY, MES_PLOTLY, formatear_moneda, formatear_moneda_completa, formatear_numero, formatear_porcentaje,
+    ALTO_GRAFICO, COLORES_COBRO, COLORES_MARCA, COLORES_UNIDAD, ETIQUETA_MONEDA,
+    FECHA_CORTA_PLOTLY, HOVER_MONEDA, MES_PLOTLY, formatear_moneda, formatear_moneda_card,
+    formatear_moneda_completa, formatear_numero, formatear_porcentaje,
 )
 from utils.ui import (
     columna_moneda, espacio_para_etiquetas, grafico, hay_datos, leyenda_estados, metricas,
@@ -58,14 +59,14 @@ km = kpis_comisiones(servicios, ops)
 
 st.markdown("#### 💰 Comisiones e ingreso")
 tarjetas_kpi([
-    dict(label="💰 Comisiones cobradas", valor=formatear_moneda(km["comision_cobrada"]),
+    dict(label="💰 Comisiones cobradas", valor=formatear_moneda_card(km["comision_cobrada"]),
          nota=f"{formatear_porcentaje(km['pct_cobranza'])} de lo generado · plata en la mano",
          gradiente="cobradas"),
-    dict(label="📈 Comisiones generadas", valor=formatear_moneda(km["comision_generada"]),
+    dict(label="📈 Comisiones generadas", valor=formatear_moneda_card(km["comision_generada"]),
          nota=f"equipos {formatear_moneda(km['generada_equipos'])} · "
               f"servicios {formatear_moneda(km['generado_servicios'])}",
          gradiente="generadas"),
-    dict(label="⏳ Por cobrar", valor=formatear_moneda(km["por_cobrar"]),
+    dict(label="⏳ Por cobrar", valor=formatear_moneda_card(km["por_cobrar"]),
          nota=f"equipos {formatear_moneda(km['por_cobrar_equipos'])} · "
               f"servicios {formatear_moneda(km['por_cobrar_servicios'])}",
          gradiente="por_cobrar"),
@@ -86,24 +87,24 @@ d1, d2 = st.columns(2)
 te, ts = ticket_promedio_equipos(ops, unidades), ticket_promedio_servicios(servicios)
 with d1:
     metricas([
-        dict(label="🚁 Equipos — comisión cobrada", value=formatear_moneda(km["cobrada_equipos"]),
+        dict(label="🚁 Equipos — comisión cobrada", value=formatear_moneda_card(km["cobrada_equipos"]),
              delta=f"{formatear_porcentaje(km['pct_equipos'])} de lo cobrado", delta_color="off",
              delta_arrow="off", help=formatear_moneda_completa(km["cobrada_equipos"])),
-        dict(label="Ticket por equipo", value=formatear_moneda(te["ticket_cobrado"]),
+        dict(label="Ticket por equipo", value=formatear_moneda_card(te["ticket_cobrado"]),
              delta=f"{te['cantidad']} drones (Agras T + Mavic)", delta_color="off", delta_arrow="off",
              help="Comisión cobrada dividida por unidad vendida, no por operación: una venta puede "
                   "llevar varios drones."),
-        dict(label="Volumen intermediado", value=formatear_moneda(km["volumen_equipos"]),
+        dict(label="Volumen intermediado", value=formatear_moneda_card(km["volumen_equipos"]),
              delta="informativo, no es ingreso", delta_color="off", delta_arrow="off"),
     ], por_fila=3)
 with d2:
     metricas([
-        dict(label="🚜 Servicios — cobrado", value=formatear_moneda(km["cobrado_servicios"]),
+        dict(label="🚜 Servicios — cobrado", value=formatear_moneda_card(km["cobrado_servicios"]),
              delta=f"{formatear_porcentaje(km['pct_servicios'])} de lo cobrado", delta_color="off",
              delta_arrow="off", help=formatear_moneda_completa(km["cobrado_servicios"])),
-        dict(label="Ticket por trabajo", value=formatear_moneda(ts["ticket"]),
+        dict(label="Ticket por trabajo", value=formatear_moneda_card(ts["ticket"]),
              delta=f"{formatear_numero(ts['cantidad'])} trabajos", delta_color="off", delta_arrow="off"),
-        dict(label="Valor por hectárea", value=formatear_moneda(ts["valor_por_ha"]),
+        dict(label="Valor por hectárea", value=formatear_moneda_card(ts["valor_por_ha"]),
              delta=f"{formatear_numero(ts['hectareas'])} ha", delta_color="off", delta_arrow="off"),
     ], por_fila=3)
 
@@ -212,9 +213,9 @@ with tab_eq:
         dict(label="Equipos vendidos", value=formatear_numero(te["cantidad"]),
              delta="Agras T + Mavic", delta_color="off", delta_arrow="off",
              help="Unidades, no operaciones: una venta puede incluir varios drones."),
-        dict(label="Ticket por equipo", value=formatear_moneda(te["ticket_cobrado"]),
+        dict(label="Ticket por equipo", value=formatear_moneda_card(te["ticket_cobrado"]),
              delta="comisión cobrada / unidad", delta_color="off", delta_arrow="off"),
-        dict(label="Comisión generada", value=formatear_moneda(km["generada_equipos"]),
+        dict(label="Comisión generada", value=formatear_moneda_card(km["generada_equipos"]),
              delta=f"{formatear_moneda(km['cobrada_equipos'])} cobrada", delta_color="off",
              delta_arrow="off", help=formatear_moneda_completa(km["generada_equipos"])),
     ], por_fila=3)
@@ -262,7 +263,7 @@ with tab_serv:
     metricas([
         dict(label="Has trabajadas", value=f"{formatear_numero(ts['hectareas'])} ha"),
         dict(label="Trabajos", value=formatear_numero(ts["cantidad"])),
-        dict(label="Ticket por trabajo", value=formatear_moneda(ts["ticket"]),
+        dict(label="Ticket por trabajo", value=formatear_moneda_card(ts["ticket"]),
              delta=f"{formatear_moneda(ts['valor_por_ha'])} por ha", delta_color="off", delta_arrow="off"),
     ], por_fila=3)
 
@@ -372,7 +373,7 @@ with st.expander("📄 Cobranza sobre lo facturado (no es el ingreso de Agropix)
 
     k = kpis_general(u)
     metricas([
-        dict(label="Facturación total", value=formatear_moneda(k["venta_total"]),
+        dict(label="Facturación total", value=formatear_moneda_card(k["venta_total"]),
              help=f"{formatear_moneda_completa(k['venta_total'])} (servicios + Facturado s/IVA de equipos)"),
         dict(label="% Cobrado", value=formatear_porcentaje(k["pct_cobrado"]),
              delta=formatear_moneda(k["cobrado"]), delta_color="off", delta_arrow="off",

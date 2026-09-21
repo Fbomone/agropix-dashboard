@@ -10,9 +10,11 @@ from utils.data import (
 )
 from utils.format import (
     AMBAR, COLORES_COBRO, COLORES_UNIDAD, ETIQUETA_MONEDA, HOVER_MONEDA,
-    formatear_moneda, formatear_moneda_completa, formatear_numero, formatear_porcentaje,
+    formatear_moneda, formatear_moneda_card, formatear_moneda_completa, formatear_numero, formatear_porcentaje,
 )
-from utils.ui import columna_moneda, espacio_para_etiquetas, grafico, hay_datos, metricas
+from utils.ui import (
+    columna_moneda, espacio_para_etiquetas, grafico, hay_datos, tarjetas_kpi,
+)
 
 COLOR = COLORES_UNIDAD[EQUIPOS]
 
@@ -30,23 +32,21 @@ principales = int(marcas.loc[marcas["principal"], "unidades"].sum()) if not marc
 
 # La comision va primero: es el ingreso real de Agropix. El facturado al cliente
 # queda despues, como volumen intermediado.
-metricas([
-    dict(label="💰 Comisión cobrada", value=formatear_moneda(k["comision_cobrada"]),
-         delta=f"{formatear_porcentaje(k['comision_cobrada'] / comision_total if comision_total else 0)} de la generada",
-         delta_color="off", delta_arrow="off", help=formatear_moneda_completa(k["comision_cobrada"])),
-    dict(label="⏳ Comisión por cobrar", value=formatear_moneda(k["comision_por_cobrar"]),
-         help=formatear_moneda_completa(k["comision_por_cobrar"])),
-    dict(label="Ticket por equipo", value=formatear_moneda(te["ticket_cobrado"]),
-         delta=f"{te['cantidad']} drones (Agras T + Mavic)", delta_color="off", delta_arrow="off",
-         help="Comisión cobrada dividida por unidad vendida. Sólo drones: los accesorios no cuentan."),
-    dict(label="Unidades vendidas", value=formatear_numero(k["unidades"]),
-         delta=f"{principales} drones · {formatear_numero(k['operaciones'])} operaciones",
-         delta_color="off", delta_arrow="off",
-         help="Cada modelo de la celda 'Modelo' es una unidad; repetido = varias unidades"),
-    dict(label="Volumen intermediado", value=formatear_moneda(k["monto"]),
-         delta="no es ingreso de Agropix", delta_color="off", delta_arrow="off",
-         help=f"{formatear_moneda_completa(k['monto'])}: Facturado s/IVA al cliente por operación completa. "
-              "Es plata del cliente al proveedor."),
+tarjetas_kpi([
+    dict(label="💰 Comisión cobrada", valor=formatear_moneda_card(k["comision_cobrada"]),
+         nota=f"{formatear_porcentaje(k['comision_cobrada'] / comision_total if comision_total else 0)} "
+              "de la generada · es el ingreso real de Agropix",
+         gradiente="cobradas"),
+    dict(label="⏳ Comisión por cobrar", valor=formatear_moneda_card(k["comision_por_cobrar"]),
+         nota=f"Generada: {formatear_moneda_card(comision_total)}", gradiente="por_cobrar"),
+    dict(label="🎫 Ticket por equipo", valor=formatear_moneda_card(te["ticket_cobrado"]),
+         nota=f"{te['cantidad']} drones (Agras T + Mavic) · comisión cobrada / unidad",
+         gradiente="generadas"),
+    dict(label="🛸 Unidades vendidas", valor=formatear_numero(k["unidades"]),
+         nota=f"{principales} drones · {formatear_numero(k['operaciones'])} operaciones",
+         gradiente="neutro"),
+    dict(label="📦 Volumen intermediado", valor=formatear_moneda_card(k["monto"]),
+         nota="Facturado s/IVA al cliente · NO es ingreso de Agropix", gradiente="neutro"),
 ])
 st.caption(
     "**Comisión Agropix** es lo que gana Agropix y la métrica que manda en esta página. El **Facturado s/IVA** al "

@@ -31,7 +31,9 @@ GRADIENTES_KPI = {
 PLOTLY_TEMPLATE = "plotly_white"
 ALTO_GRAFICO = 380
 SEPARADORES_PLOTLY = ",."  # decimal con coma, miles con punto
-HOVER_MONEDA = "$,.0f"
+# El tooltip muestra el valor exacto con centavos: el eje y las etiquetas van
+# abreviados ("$500k") y el hover es donde se ve el numero real.
+HOVER_MONEDA = "$,.2f"
 # ".0s" redondea a 1 cifra significativa (150k -> "$200k", ticks repetidos);
 # ".3~s" muestra $150k / $1,25M y recorta ceros sobrantes.
 TICK_MONEDA = "$,.3~s"
@@ -71,12 +73,21 @@ def formatear_moneda(valor) -> str:
     return f"{signo}US$ {formatear_numero(a)}"
 
 
-def formatear_moneda_completa(valor) -> str:
-    """Sin abreviar: 'US$ 1.563.036'."""
+def formatear_moneda_completa(valor, decimales: int = 0) -> str:
+    """Sin abreviar: 'US$ 1.563.036' o, con decimales=2, 'US$ 1.563.036,00'."""
     if es_nulo(valor):
         return "—"
     v = float(valor)
-    return f"{'-' if v < 0 else ''}US$ {formatear_numero(abs(v))}"
+    return f"{'-' if v < 0 else ''}US$ {formatear_numero(abs(v), decimales)}"
+
+
+def formatear_moneda_card(valor) -> str:
+    """Para las tarjetas de KPI: el numero exacto con centavos, sin abreviar.
+
+    Las tarjetas son el dato que se lee y se anota; los graficos si van
+    abreviados porque ahi el valor exacto lo da el tooltip.
+    """
+    return formatear_moneda_completa(valor, 2)
 
 
 def formatear_porcentaje(valor) -> str:

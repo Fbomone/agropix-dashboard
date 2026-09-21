@@ -65,15 +65,35 @@ jobs:
           printf '%s' "$GOOGLE_CREDENTIALS_JSON" > credentials.json
           python -c "import json; json.load(open('credentials.json')); print('credentials.json válido')"
 
+      - name: Verificar que haya vía de envío
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+        run: |
+          if [ -z "$SMTP_USER$SENDGRID_API_KEY" ]; then
+            echo "::error::Falta configurar el envío. Cargá SMTP_USER + SMTP_PASSWORD"
+            echo "::error::(App Password de Gmail) en Settings → Secrets → Actions."
+            exit 1
+          fi
+          echo "Vía de envío configurada."
+
       - name: Enviar reporte
         env:
           CRM_SHEET_ID: ${{ secrets.CRM_SHEET_ID }}
           VENTAS_SHEET_ID: ${{ secrets.VENTAS_SHEET_ID }}
           CRM_TAB: ${{ secrets.CRM_TAB }}
           VENTAS_TAB: ${{ secrets.VENTAS_TAB }}
+          # Envio por Gmail (SMTP). El App Password NO es la contrasena de la
+          # cuenta: se genera en myaccount.google.com/apppasswords
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          # Alternativa por SendGrid, si algun dia se vuelve a usar
           SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
           EMAIL_REMITENTE: ${{ secrets.EMAIL_REMITENTE }}
+          # Opcional: reemplaza la lista de utils/reporte_semanal.py
           EMAIL_DESTINATARIOS: ${{ secrets.EMAIL_DESTINATARIOS }}
+          URL_APP: ${{ secrets.URL_APP }}
         run: |
           ARGS=""
           if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
