@@ -55,7 +55,7 @@ COHERE_API_KEY = _cfg("COHERE_API_KEY")
 # Link del boton "Ver reporte completo" en el mail semanal. Se cambia desde los
 # secrets si la app se redeploya con otro nombre, sin tocar codigo. El default es
 # la URL larga que asigna Streamlit Cloud, que no depende del nombre corto.
-URL_APP = _cfg("URL_APP", "https://agropix-dashboard-rlugsmacrmmzqtonnbqw9.streamlit.app")
+URL_APP = _cfg("URL_APP", "https://agropix-dashboard-rlugsmactrmmzqtonnbqw9.streamlit.app/")
 
 # SendGrid (envio automatico de reportes). Se aceptan las dos formas de secrets:
 # claves planas (SENDGRID_API_KEY) o la tabla [sendgrid] con api_key/from_email.

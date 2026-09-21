@@ -298,7 +298,7 @@ def test_corrido_a_mano_el_envio_se_marca_manual(monkeypatch, tmp_path):
 # Link a la app
 # ---------------------------------------------------------------------------
 def test_el_link_apunta_a_la_app_de_produccion():
-    assert rs.URL_APP == "https://agropix-dashboard-rlugsmacrmmzqtonnbqw9.streamlit.app"
+    assert rs.URL_APP == "https://agropix-dashboard-rlugsmactrmmzqtonnbqw9.streamlit.app/"
 
 
 def test_el_link_va_en_el_boton_y_tambien_en_texto_copiable():
