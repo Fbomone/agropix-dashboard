@@ -309,18 +309,44 @@ def estado_cobro_equipo(estado, cobrado) -> str:
 # TODO: confirmar si el "T55" de la base corresponde a T551, T552 o T553.
 #       Si es uno solo, alcanza con cargarle a "T55" el mismo precio.
 
-def cargar_precios(path: Path = PRECIOS_PATH) -> dict:
-    """{modelo: precio}; precio None = pendiente de confirmar."""
-    if not path.exists():
+def precios_de_secrets() -> dict:
+    """Precios cargados en st.secrets["precios_lista"], o {} si no hay.
+
+    Es la unica forma de que un precio sobreviva en Streamlit Cloud: lo que se
+    guarda con guardar_precios() va a precios_lista.json, dentro del contenedor,
+    y ese disco se borra en cada reinicio. Un precio en los secrets persiste y
+    ademas tiene efecto sin necesidad de redeployar.
+    """
+    try:
+        import streamlit as st
+
+        return dict(st.secrets.get("precios_lista") or {})
+    except Exception:
         return {}
-    crudo = json.loads(path.read_text(encoding="utf-8"))
+
+
+def _normalizar_precio(precio) -> float | None:
+    valido = isinstance(precio, (int, float)) and not isinstance(precio, bool) and precio > 0
+    return float(precio) if valido else None
+
+
+def cargar_precios(path: Path = PRECIOS_PATH) -> dict:
+    """{modelo: precio}; precio None = pendiente de confirmar.
+
+    Los precios de st.secrets["precios_lista"] pisan a los del archivo: en Cloud
+    son los unicos que no se pierden al reiniciarse el contenedor.
+    """
+    crudo = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     precios = {}
     for modelo, precio in crudo.items():
         modelo = str(modelo).strip()
-        if not modelo:
-            continue
-        valido = isinstance(precio, (int, float)) and not isinstance(precio, bool) and precio > 0
-        precios[modelo] = float(precio) if valido else None
+        if modelo:
+            precios[modelo] = _normalizar_precio(precio)
+
+    for modelo, precio in precios_de_secrets().items():
+        modelo = str(modelo).strip()
+        if modelo:
+            precios[modelo] = _normalizar_precio(precio)
     return precios
 
 

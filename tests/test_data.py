@@ -539,3 +539,40 @@ def test_precios_ida_y_vuelta(tmp_path):
     path = tmp_path / "precios.json"
     guardar_precios({"T100": 42000.0, "T50": None}, path)
     assert cargar_precios(path) == {"T100": 42000.0, "T50": None}
+
+
+# ---------------------------------------------------------------------------
+# Precios de lista: persistencia en Cloud
+# ---------------------------------------------------------------------------
+def test_los_precios_de_secrets_pisan_al_archivo(tmp_path, monkeypatch):
+    """En Cloud el archivo se borra al reiniciar: los secrets son lo unico que queda."""
+    archivo = tmp_path / "precios.json"
+    archivo.write_text('{"T100": 42000, "T50": null, "T70": 35000}', encoding="utf-8")
+    monkeypatch.setattr("utils.data.precios_de_secrets",
+                        lambda: {"T50": 26000, "T100": 43500})
+
+    precios = cargar_precios(archivo)
+    assert precios["T50"] == 26000.0, "el precio que faltaba entra desde los secrets"
+    assert precios["T100"] == 43500.0, "los secrets le ganan al archivo"
+    assert precios["T70"] == 35000.0, "lo que no esta en secrets sigue saliendo del archivo"
+
+
+def test_sin_secrets_los_precios_salen_del_archivo(tmp_path, monkeypatch):
+    archivo = tmp_path / "precios.json"
+    archivo.write_text('{"T100": 42000}', encoding="utf-8")
+    monkeypatch.setattr("utils.data.precios_de_secrets", lambda: {})
+    assert cargar_precios(archivo) == {"T100": 42000.0}
+
+
+def test_sin_archivo_pero_con_secrets_igual_hay_precios(tmp_path, monkeypatch):
+    monkeypatch.setattr("utils.data.precios_de_secrets", lambda: {"T55": 32000})
+    assert cargar_precios(tmp_path / "no_existe.json") == {"T55": 32000.0}
+
+
+def test_un_precio_invalido_en_secrets_queda_como_pendiente(tmp_path, monkeypatch):
+    archivo = tmp_path / "precios.json"
+    archivo.write_text('{"T100": 42000}', encoding="utf-8")
+    monkeypatch.setattr("utils.data.precios_de_secrets",
+                        lambda: {"T100": 0, "T70": -5, "T50": "cuarenta mil"})
+    precios = cargar_precios(archivo)
+    assert precios["T100"] is None and precios["T70"] is None and precios["T50"] is None

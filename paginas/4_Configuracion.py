@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 import streamlit as st
 
@@ -126,12 +128,48 @@ editado = st.data_editor(
     key="editor_precios",
 )
 
-if st.button("💾 Guardar precios", type="primary"):
+def precios_editados() -> dict:
+    """Lo que quedó en el editor, como {modelo: precio | None}."""
     nuevos = {}
     for modelo, precio in zip(editado["modelo"], editado["precio_lista"]):
         if pd.isna(modelo) or not str(modelo).strip():
             continue
         nuevos[str(modelo).strip()] = float(precio) if pd.notna(precio) and precio > 0 else None
-    guardar_precios(nuevos)
+    return nuevos
+
+
+if st.button("💾 Guardar precios", type="primary"):
+    guardar_precios(precios_editados())
+    st.cache_data.clear()  # los precios entran en el cacheo de construir_datos
     st.session_state["precios_guardados"] = True
     st.rerun()
+
+# En Streamlit Cloud el disco del contenedor es efimero: guardar deja los precios
+# andando en la sesion, pero se pierden al reiniciarse. La unica forma de que
+# persistan es dejarlos en los secrets, que ademas no requiere redeploy.
+with st.expander("📌 Que los precios no se pierdan (importante en producción)"):
+    st.markdown(
+        "**Guardar** escribe `precios_lista.json` dentro del servidor. En Streamlit Cloud ese "
+        "disco se borra cada vez que la app se reinicia o se redeploya, así que los precios que "
+        "cargues acá **se van a perder**.\n\n"
+        "Para que queden fijos, pegá este bloque en *Manage app → Settings → Secrets*. "
+        "Lo que esté en los secrets le gana al archivo y tiene efecto sin redeployar."
+    )
+    actuales = precios_editados()
+    con_precio = {m: p for m, p in actuales.items() if p is not None}
+    bloque = "[precios_lista]\n" + "\n".join(
+        f'"{modelo}" = {int(precio) if float(precio).is_integer() else precio}'
+        for modelo, precio in sorted(con_precio.items(), key=lambda kv: kv[0].casefold())
+    )
+    st.code(bloque, language="toml")
+    if len(con_precio) < len(actuales):
+        faltan = [m for m, p in actuales.items() if p is None]
+        st.caption(f"Sin precio todavía, no entran al bloque: {', '.join(sorted(faltan))}.")
+    st.download_button(
+        "⬇️ Descargar precios_lista.json",
+        data=(json.dumps({m: (int(p) if p is not None and float(p).is_integer() else p)
+                          for m, p in sorted(actuales.items(), key=lambda kv: kv[0].casefold())},
+                         ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
+        file_name="precios_lista.json", mime="application/json", on_click="ignore",
+        help="Para reemplazar el archivo del repositorio y que viaje en el próximo deploy.",
+    )

@@ -201,12 +201,19 @@ def test_bloqueo_tras_cinco_intentos_fallidos(sesion):
 # Rol de administrador
 # ---------------------------------------------------------------------------
 def test_los_admins_son_los_declarados():
+    assert auth.es_admin("francobomone14@gmail.com")
     assert auth.es_admin("infoagropix@gmail.com")
-    assert auth.es_admin("nfoagropix@gmail.com"), "la variante sin la i tambien es admin"
+
+
+def test_la_variante_sin_la_i_ya_no_existe():
+    """Se confirmo que la direccion es infoagropix@: nfoagropix@ salio de la lista."""
+    assert "nfoagropix@gmail.com" not in auth.EMAILS_AUTORIZADOS
+    assert not auth.es_admin("nfoagropix@gmail.com")
 
 
 @pytest.mark.parametrize("email", [
-    "francobomone14@gmail.com", "matias21tossen@gmail.com", "nicotobaldi55@gmail.com",
+    "matias21tossen@gmail.com", "nicotobaldi55@gmail.com",
+    "fabiocailletbois@gmail.com", "ignacio.ramello879@gmail.com", "ggaletto.gg@gmail.com",
 ])
 def test_el_resto_no_es_admin(email):
     assert not auth.es_admin(email)
@@ -224,8 +231,8 @@ def test_todos_los_admins_estan_autorizados():
 
 def test_el_login_deja_el_rol_en_la_sesion(secrets, sesion, monkeypatch):
     monkeypatch.setattr(auth, "_seccion_secrets",
-                        lambda _n: {"infoagropix_gmail_com": "clave-admin"})
-    usuario = auth.verificar_credenciales("infoagropix@gmail.com", "clave-admin")
+                        lambda _n: {"francobomone14_gmail_com": "clave-admin"})
+    usuario = auth.verificar_credenciales("francobomone14@gmail.com", "clave-admin")
     assert usuario["rol"] == "admin"
 
     sesion.update(auth_ok=True, auth_email=usuario["email"], auth_rol=usuario["rol"],
@@ -245,7 +252,7 @@ def test_sin_sesion_no_hay_admin(sesion):
 
 
 def test_el_logout_borra_el_rol(sesion):
-    sesion.update(auth_ok=True, auth_email="infoagropix@gmail.com", auth_rol="admin",
+    sesion.update(auth_ok=True, auth_email="francobomone14@gmail.com", auth_rol="admin",
                   auth_ultimo_uso=datetime.now())
     auth.cerrar_sesion()
     assert "auth_rol" not in sesion

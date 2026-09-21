@@ -70,17 +70,11 @@ EMAILS_AUTORIZADOS: dict[str, str] = {
     "ggaletto.gg@gmail.com": "ggaletto_gg_gmail_com",
     "ignacio.ramello879@gmail.com": "ignacio_ramello879_gmail_com",
     "nicotobaldi55@gmail.com": "nicotobaldi55_gmail_com",
-    "nfoagropix@gmail.com": "nfoagropix_gmail_com",
 }
 
 # Acceso al panel de administracion. Todos los demas ven el mismo dashboard: el
 # rol solo habilita el panel, no cambia los datos que se muestran.
-#
-# "nfoagropix@" (sin la i) aparece en la especificacion como admin y remitente;
-# "infoagropix@" es el usuario que veniamos usando. Estan los dos porque no sabemos
-# cual es la direccion real, y tener de mas no abre ningun agujero: sin contrasena
-# cargada en los secrets ninguno de los dos entra.
-ADMINS: tuple[str, ...] = ("infoagropix@gmail.com", "nfoagropix@gmail.com")
+ADMINS: tuple[str, ...] = ("francobomone14@gmail.com", "infoagropix@gmail.com")
 
 # ---------------------------------------------------------------------------
 # Auditoria
