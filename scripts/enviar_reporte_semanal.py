@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -33,7 +34,8 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 from utils.data import aplicar_filtros, cargar_precios, construir_datos  # noqa: E402
-from utils.email_sender import ErrorEnvioEmail, configurado, enviar_reporte  # noqa: E402
+from utils import envio_log  # noqa: E402
+from utils.email_sender import configurado, enviar_individual  # noqa: E402
 from utils.reporte_semanal import (  # noqa: E402
     DESTINATARIOS, asunto, cuerpo_html, etiqueta_periodo, kpis_semana, nombre_pdf,
     semana_cerrada, top_clientes_semana,
@@ -48,6 +50,8 @@ def argumentos(argv=None):
     p.add_argument("--hasta", type=_fecha, help="fin del período (YYYY-MM-DD)")
     p.add_argument("--destinatarios", help="lista separada por comas; reemplaza la de por defecto")
     p.add_argument("--dry-run", action="store_true", help="no envía: imprime y guarda el PDF")
+    p.add_argument("--tipo", choices=[envio_log.AUTOMATICO, envio_log.MANUAL, envio_log.PRUEBA],
+                   help="cómo queda registrado en el historial; por defecto se deduce del entorno")
     p.add_argument("--salida", default="salida", help="carpeta donde guardar el PDF en dry-run")
     return p.parse_args(argv)
 
@@ -118,6 +122,10 @@ def main(argv=None) -> int:
     log.info("PDF: %s bytes", f"{len(pdf):,}")
 
     destino = _destinatarios(args.destinatarios)
+    # GITHUB_ACTIONS lo define el runner: distingue el envio del cron de una
+    # corrida a mano sin que haya que acordarse de pasar --tipo
+    tipo = args.tipo or (envio_log.AUTOMATICO if os.getenv("GITHUB_ACTIONS")
+                         else envio_log.MANUAL)
     archivo = nombre_pdf(hasta)
     html = cuerpo_html(k, desde, hasta, clientes)
 
@@ -130,13 +138,25 @@ def main(argv=None) -> int:
         log.info("DRY-RUN: se habría enviado a %s", ", ".join(destino))
         return 0
 
-    try:
-        enviados = enviar_reporte(pdf, archivo, destinatarios=destino,
-                                  asunto=asunto(desde, hasta), html=html)
-    except ErrorEnvioEmail as e:
-        log.error("Falló el envío: %s", e)
+    # enviar_individual manda uno por uno: si alguno falla, se sabe cual. Un envio
+    # con varios "to" falla para todos o para ninguno.
+    resultado = enviar_individual(pdf, archivo, destino, asunto=asunto(desde, hasta),
+                                  html=html, periodo=etiqueta_periodo(desde, hasta))
+    envio_log.registrar(resultado, tipo=tipo, periodo=etiqueta_periodo(desde, hasta),
+                        usuario="scripts/enviar_reporte_semanal.py")
+
+    for d in resultado["detalle"]:
+        if d["exitoso"]:
+            log.info("  OK      %s", d["email"])
+        else:
+            log.error("  FALLO   %s — %s", d["email"], d.get("error", ""))
+
+    if resultado["fallidos"]:
+        log.error("Enviado a %d de %d destinatarios.",
+                  resultado["exitosos"], resultado["total"])
+        # Parcial tambien es fallo: si Actions lo marca verde, nadie se entera
         return 6
-    log.info("Enviado a %d destinatarios: %s", len(enviados), ", ".join(enviados))
+    log.info("Enviado a %d destinatarios: %s", resultado["exitosos"], ", ".join(destino))
     return 0
 
 

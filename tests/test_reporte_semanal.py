@@ -211,3 +211,84 @@ def test_el_script_corta_si_el_envio_no_esta_configurado(monkeypatch):
 
     monkeypatch.setattr(script, "cargar", no_deberia_leer)
     assert script.main([]) == 3
+
+
+# ---------------------------------------------------------------------------
+# Resultado del envio: un fallo parcial NO es exito
+# ---------------------------------------------------------------------------
+def _script_con_envio(monkeypatch, resultado, tmp_path):
+    """Prepara el script con todo mockeado salvo el resultado del envio."""
+    from scripts import enviar_reporte_semanal as script
+    from utils import envio_log
+
+    monkeypatch.setattr(script, "configurado", lambda: (True, ""))
+    monkeypatch.setattr(script, "cargar", lambda d, h: datos())
+    monkeypatch.setattr(script, "enviar_individual", lambda *a, **k: resultado)
+    monkeypatch.setattr(envio_log, "ARCHIVO", tmp_path / "envios.jsonl")
+    monkeypatch.setitem(__import__("sys").modules, "utils.pdf",
+                        type("M", (), {"generar_pdf": staticmethod(lambda *a, **k: b"%PDF-1.4")}))
+    return script
+
+
+def test_el_script_devuelve_error_si_alguno_no_llego(monkeypatch, tmp_path):
+    """Si Actions lo marcara verde con envíos caídos, nadie se entera."""
+    parcial = {"exitosos": 1, "fallidos": 1, "total": 2, "detalle": [
+        {"email": "ok@agropix.com", "exitoso": True, "momento": "2026-09-20T09:30:00"},
+        {"email": "mal@agropix.com", "exitoso": False, "error": "535 auth",
+         "momento": "2026-09-20T09:30:00"},
+    ]}
+    script = _script_con_envio(monkeypatch, parcial, tmp_path)
+    assert script.main(["--desde", "2026-09-07", "--hasta", "2026-09-13"]) == 6
+
+
+def test_el_script_devuelve_cero_si_llegaron_todos(monkeypatch, tmp_path):
+    completo = {"exitosos": 2, "fallidos": 0, "total": 2, "detalle": [
+        {"email": "a@agropix.com", "exitoso": True, "momento": "2026-09-20T09:30:00"},
+        {"email": "b@agropix.com", "exitoso": True, "momento": "2026-09-20T09:30:00"},
+    ]}
+    script = _script_con_envio(monkeypatch, completo, tmp_path)
+    assert script.main(["--desde", "2026-09-07", "--hasta", "2026-09-13"]) == 0
+
+
+def test_el_envio_queda_registrado_en_el_historial(monkeypatch, tmp_path):
+    from utils import envio_log
+
+    completo = {"exitosos": 1, "fallidos": 0, "total": 1, "detalle": [
+        {"email": "a@agropix.com", "exitoso": True, "momento": "2026-09-20T09:30:00"}]}
+    archivo = tmp_path / "envios.jsonl"
+    script = _script_con_envio(monkeypatch, completo, tmp_path)
+    monkeypatch.setattr(envio_log, "ARCHIVO", archivo)
+
+    script.main(["--desde", "2026-09-07", "--hasta", "2026-09-13", "--tipo", "AUTOMATICO"])
+    entradas = envio_log.historial(archivo=archivo)
+    assert len(entradas) == 1
+    assert entradas[0]["tipo"] == "AUTOMATICO"
+    assert entradas[0]["periodo"] == "Lunes 07/09 - Domingo 13/09"
+
+
+def test_en_github_actions_el_envio_se_marca_automatico(monkeypatch, tmp_path):
+    from utils import envio_log
+
+    completo = {"exitosos": 1, "fallidos": 0, "total": 1, "detalle": [
+        {"email": "a@agropix.com", "exitoso": True, "momento": "2026-09-20T09:30:00"}]}
+    archivo = tmp_path / "envios.jsonl"
+    script = _script_con_envio(monkeypatch, completo, tmp_path)
+    monkeypatch.setattr(envio_log, "ARCHIVO", archivo)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+
+    script.main(["--desde", "2026-09-07", "--hasta", "2026-09-13"])
+    assert envio_log.historial(archivo=archivo)[0]["tipo"] == "AUTOMATICO"
+
+
+def test_corrido_a_mano_el_envio_se_marca_manual(monkeypatch, tmp_path):
+    from utils import envio_log
+
+    completo = {"exitosos": 1, "fallidos": 0, "total": 1, "detalle": [
+        {"email": "a@agropix.com", "exitoso": True, "momento": "2026-09-20T09:30:00"}]}
+    archivo = tmp_path / "envios.jsonl"
+    script = _script_con_envio(monkeypatch, completo, tmp_path)
+    monkeypatch.setattr(envio_log, "ARCHIVO", archivo)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+
+    script.main(["--desde", "2026-09-07", "--hasta", "2026-09-13"])
+    assert envio_log.historial(archivo=archivo)[0]["tipo"] == "MANUAL"
