@@ -58,12 +58,21 @@ def test_la_hora_se_calcula_en_zona_argentina():
 # ---------------------------------------------------------------------------
 # Destinatarios
 # ---------------------------------------------------------------------------
-def test_son_los_siete_destinatarios_y_estan_normalizados():
-    assert len(rs.DESTINATARIOS) == 7
-    assert len(set(rs.DESTINATARIOS)) == 7, "hay destinatarios repetidos"
+def test_los_destinatarios_estan_normalizados():
+    assert len(rs.DESTINATARIOS) == 6
+    assert len(set(rs.DESTINATARIOS)) == 6, "hay destinatarios repetidos"
     for email in rs.DESTINATARIOS:
         assert email == email.lower().strip()
         assert "@" in email and " " not in email
+
+
+def test_infoagropix_no_recibe_el_reporte():
+    """Salio de la lista de destinatarios, pero conserva el acceso a la app."""
+    from utils.auth import EMAILS_AUTORIZADOS, es_admin
+
+    assert "infoagropix@gmail.com" not in rs.DESTINATARIOS
+    assert "infoagropix@gmail.com" in EMAILS_AUTORIZADOS
+    assert es_admin("infoagropix@gmail.com")
 
 
 # ---------------------------------------------------------------------------
@@ -119,15 +128,17 @@ def test_delta_muestra_el_signo():
 # ---------------------------------------------------------------------------
 # Resumen y cuerpo del mail
 # ---------------------------------------------------------------------------
-def test_resumen_menciona_cobrado_generado_y_hectareas():
+def test_el_resumen_habla_de_lo_cobrado_y_no_de_lo_generado():
     k = rs.kpis_semana(datos(
         sv=servicios([{"monto": 3000.0, "hectareas": 120.0, "estado_cobro": COBRADO}]),
         eq=ops([{"comision": 1000.0, "cobrado": False}]),
     ))
     texto = rs.resumen_texto(k, date(2026, 9, 7), date(2026, 9, 13))
     assert "07/09" in texto and "13/09" in texto
-    assert "US$ 3.000" in texto      # cobrado
-    assert "US$ 4.000" in texto      # generado
+    assert "cobró US$ 3.000" in texto
+    assert "generado" not in texto.lower(), "el resumen no debe hablar de generado"
+    assert "US$ 4.000" not in texto, "el total del negocio va en la tarjeta, no en el texto"
+    assert "US$ 1.000 por cobrar" in texto
     assert "120" in texto and "ha" in texto
 
 
@@ -136,19 +147,45 @@ def test_resumen_de_una_semana_sin_movimiento_lo_dice():
     assert "no se registraron" in texto
 
 
-def test_cuerpo_html_trae_los_tres_kpis_el_boton_y_el_aviso():
+def test_cuerpo_html_trae_los_tres_kpis_y_el_boton():
     k = rs.kpis_semana(datos(
         sv=servicios([{"monto": 3000.0, "hectareas": 120.0, "estado_cobro": COBRADO}]),
         eq=ops([{"comision": 1000.0, "cobrado": True}]),
     ))
     html = rs.cuerpo_html(k, date(2026, 9, 7), date(2026, 9, 13))
-    assert "Comisiones cobradas" in html
+    assert "Total del negocio" in html
     assert "Has trabajadas" in html
     assert "Clientes" in html
     assert "Ver reporte completo en Streamlit" in html
     assert rs.URL_APP in html
-    assert "CONFIDENCIAL" in html
     assert "Lunes 07/09 - Domingo 13/09" in html
+    assert "Hola, va el resumen de la semana." in html
+
+
+def test_el_total_del_negocio_suma_comision_de_equipos_y_ventas_de_servicios():
+    """1.000 de comision + 3.000 de servicios = 4.000, cobrado o no."""
+    k = rs.kpis_semana(datos(
+        sv=servicios([{"monto": 3000.0, "estado_cobro": COBRADO}]),
+        eq=ops([{"comision": 1000.0, "cobrado": False}]),
+    ))
+    assert k["total_negocio"] == 4000.0
+    html = rs.cuerpo_html(k, date(2026, 9, 7), date(2026, 9, 13))
+    assert "US$ 4.000" in html
+    assert "75,0 % de cobranza" in html
+
+
+def test_el_mail_ya_no_trae_la_guia_del_pdf_ni_el_aviso_confidencial():
+    html = rs.cuerpo_html(rs.kpis_semana(datos()), date(2026, 9, 7), date(2026, 9, 13))
+    assert "Qué hay en el PDF" not in html
+    assert "Cómo leer los números" not in html
+    assert "CONFIDENCIAL" not in html
+    assert "redistribuir" not in html
+
+
+def test_el_boton_aclara_que_no_esta_optimizado_para_celular():
+    html = rs.cuerpo_html(rs.kpis_semana(datos()), date(2026, 9, 7), date(2026, 9, 13))
+    assert "no optimizado para dispositivos móviles" in html
+    assert "Versión para computadora" in html
 
 
 def test_el_cuerpo_no_usa_flex_ni_grid_ni_style_externo():
