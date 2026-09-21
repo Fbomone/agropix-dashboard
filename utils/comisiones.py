@@ -9,7 +9,8 @@ Agropix cobra de dos formas distintas y no son comparables:
              es plata del cliente al proveedor: volumen intermediado, no ingreso.
 
 Las funciones de utils/data.py ya calculan el ingreso consolidado. Este modulo
-agrega la vista que faltaba: comisiones GENERADAS vs COBRADAS vs POR COBRAR,
+agrega la vista que faltaba: INGRESOS (comision de equipos + ventas de
+servicios), cuanto de eso esta cobrado y cuanto por cobrar,
 clasificacion por marca (Agras T / Mavic / accesorios), ticket promedio medido
 en comision y cortes por canal y vendedor.
 
@@ -113,6 +114,11 @@ def kpis_comisiones(servicios: pd.DataFrame, ops: pd.DataFrame) -> dict:
     por_cobrar = por_cobrar_eq + por_cobrar_sv
 
     return {
+        # "Ingresos para Agropix": Comision $ de equipos + Valor total de ventas
+        # de servicios. Es lo que el negocio factura en el periodo, cobrado o no,
+        # y el numero que encabeza el Reporte General y el mail semanal.
+        # comision_generada queda como alias historico del mismo valor.
+        "ingresos": generada,
         # Consolidado: es lo que va en los KPIs grandes del Reporte General
         "comision_generada": generada,
         "comision_cobrada": cobrada,

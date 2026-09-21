@@ -2,15 +2,13 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from utils.comisiones import (
-    comisiones_por_canal, equipos_por_marca, ranking_vendedores, ticket_promedio_equipos,
-)
+from utils.comisiones import comisiones_por_canal, ranking_vendedores, ticket_promedio_equipos
 from utils.data import (
     COBRADO, EQUIPOS, POR_COBRAR, kpis_equipos, resumen_por_modelo, vigentes,
 )
 from utils.format import (
     AMBAR, COLORES_COBRO, COLORES_UNIDAD, ETIQUETA_MONEDA, HOVER_MONEDA,
-    formatear_moneda, formatear_moneda_card, formatear_moneda_completa, formatear_numero, formatear_porcentaje,
+    formatear_moneda_card, formatear_moneda_completa, formatear_numero,
 )
 from utils.ui import (
     columna_moneda, espacio_para_etiquetas, grafico, hay_datos, tarjetas_kpi,
@@ -25,35 +23,21 @@ st.title("🛸 Venta de Equipos")
 st.caption("Fuente: Ventas. Una operación puede incluir varios equipos; las devueltas no suman.")
 
 k = kpis_equipos(ops, unidades)
-comision_total = k["comision_cobrada"] + k["comision_por_cobrar"]
 te = ticket_promedio_equipos(ops, unidades)
-marcas = equipos_por_marca(unidades)
-principales = int(marcas.loc[marcas["principal"], "unidades"].sum()) if not marcas.empty else 0
 
 # La comision va primero: es el ingreso real de Agropix. El facturado al cliente
-# queda despues, como volumen intermediado.
+# queda al final, como volumen intermediado.
 tarjetas_kpi([
     dict(label="💰 Comisión cobrada", valor=formatear_moneda_card(k["comision_cobrada"]),
-         nota=f"{formatear_porcentaje(k['comision_cobrada'] / comision_total if comision_total else 0)} "
-              "de la generada · es el ingreso real de Agropix",
          gradiente="cobradas"),
     dict(label="⏳ Comisión por cobrar", valor=formatear_moneda_card(k["comision_por_cobrar"]),
-         nota=f"Generada: {formatear_moneda_card(comision_total)}", gradiente="por_cobrar"),
+         gradiente="por_cobrar"),
     dict(label="🎫 Ticket por equipo", valor=formatear_moneda_card(te["ticket_cobrado"]),
-         nota=f"{te['cantidad']} drones (Agras T + Mavic) · comisión cobrada / unidad",
          gradiente="generadas"),
-    dict(label="🛸 Unidades vendidas", valor=formatear_numero(k["unidades"]),
-         nota=f"{principales} drones · {formatear_numero(k['operaciones'])} operaciones",
-         gradiente="neutro"),
+    dict(label="🛸 Unidades vendidas", valor=formatear_numero(k["unidades"]), gradiente="neutro"),
     dict(label="📦 Volumen intermediado", valor=formatear_moneda_card(k["monto"]),
-         nota="Facturado s/IVA al cliente · NO es ingreso de Agropix", gradiente="neutro"),
+         gradiente="neutro"),
 ])
-st.caption(
-    "**Comisión Agropix** es lo que gana Agropix y la métrica que manda en esta página. El **Facturado s/IVA** al "
-    f"cliente ({formatear_moneda(k['monto'])}) es volumen intermediado: en el período la comisión fue el "
-    f"{formatear_porcentaje(comision_total / k['monto'] if k['monto'] else 0)} de ese facturado. El precio de lista "
-    "sólo reparte el facturado entre los modelos de una misma operación."
-)
 
 v = vigentes(ops)
 
@@ -157,23 +141,17 @@ with g5:
         grafico(fig, key="comisiones")
 with g6:
     st.subheader("Top vendedores")
-    st.caption("Ordenados por comisión **cobrada**: es dinero que entró, no cantidad de operaciones.")
     ranking = ranking_vendedores(ops)
     if hay_datos(ranking):
         st.dataframe(
             ranking,
             hide_index=True,
             width="stretch",
-            column_order=["vendedor", "comision_cobrada", "comision_generada", "por_cobrar",
-                          "pct_cobranza", "unidades", "operaciones"],
+            column_order=["vendedor", "comision_generada", "comision_cobrada", "unidades"],
             column_config={
                 "vendedor": "Vendedor",
-                "comision_cobrada": columna_moneda("Comisión cobrada"),
                 "comision_generada": columna_moneda("Comisión generada"),
-                "por_cobrar": columna_moneda("Por cobrar"),
-                "pct_cobranza": st.column_config.ProgressColumn("% cobro", format="percent",
-                                                                min_value=0, max_value=1),
+                "comision_cobrada": columna_moneda("Comisión cobrada"),
                 "unidades": st.column_config.NumberColumn("Unidades", format="%,.0f"),
-                "operaciones": st.column_config.NumberColumn("Operaciones", format="%,.0f"),
             },
         )

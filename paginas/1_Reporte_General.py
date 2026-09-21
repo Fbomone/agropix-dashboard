@@ -57,56 +57,26 @@ st.caption(f"🔎 {leyenda_estados(st.session_state.get('estados_trabajo'), st.s
 # ---------------------------------------------------------------------------
 km = kpis_comisiones(servicios, ops)
 
-st.markdown("#### 💰 Comisiones e ingreso")
+st.markdown("#### 💰 Ingresos")
 tarjetas_kpi([
-    dict(label="💰 Comisiones cobradas", valor=formatear_moneda_card(km["comision_cobrada"]),
-         nota=f"{formatear_porcentaje(km['pct_cobranza'])} de lo generado · plata en la mano",
-         gradiente="cobradas"),
-    dict(label="📈 Comisiones generadas", valor=formatear_moneda_card(km["comision_generada"]),
-         nota=f"equipos {formatear_moneda(km['generada_equipos'])} · "
-              f"servicios {formatear_moneda(km['generado_servicios'])}",
-         gradiente="generadas"),
-    dict(label="⏳ Por cobrar", valor=formatear_moneda_card(km["por_cobrar"]),
-         nota=f"equipos {formatear_moneda(km['por_cobrar_equipos'])} · "
-              f"servicios {formatear_moneda(km['por_cobrar_servicios'])}",
-         gradiente="por_cobrar"),
+    dict(label="💰 Ingresos", valor=formatear_moneda_card(km["ingresos"]), gradiente="cobradas"),
     dict(label="🌾 Has trabajadas", valor=f"{formatear_numero(km['hectareas'])} ha",
-         nota=f"{formatear_numero(km['cantidad_servicios'])} trabajos · "
-              f"{km['clientes']} clientes", gradiente="hectareas"),
+         gradiente="hectareas"),
+    dict(label="👥 Clientes", valor=formatear_numero(km["clientes"]), gradiente="generadas"),
 ])
-st.caption(
-    f"**Comisiones cobradas** es la métrica de verdad: {formatear_moneda_completa(km['comision_cobrada'])} que "
-    "entraron a Agropix. En servicios Agropix se queda con todo lo facturado; en equipos, sólo con la comisión. "
-    f"El Facturado s/IVA de equipos ({formatear_moneda(km['volumen_equipos'])}) es **volumen intermediado**: "
-    "plata del cliente al proveedor, no ingreso. Los trabajos cancelados y los equipos devueltos no suman."
-)
 
-# Desglose por tipo de ingreso: los dos negocios no se miden igual
+# Desglose por tipo de ingreso. Van las 6 en una sola grilla de 3 columnas:
+# dos bloques de st.columns(3) lado a lado no alinean entre si.
 st.markdown("##### 🎯 Desglose por tipo de ingreso")
-d1, d2 = st.columns(2)
 te, ts = ticket_promedio_equipos(ops, unidades), ticket_promedio_servicios(servicios)
-with d1:
-    metricas([
-        dict(label="🚁 Equipos — comisión cobrada", value=formatear_moneda_card(km["cobrada_equipos"]),
-             delta=f"{formatear_porcentaje(km['pct_equipos'])} de lo cobrado", delta_color="off",
-             delta_arrow="off", help=formatear_moneda_completa(km["cobrada_equipos"])),
-        dict(label="Ticket por equipo", value=formatear_moneda_card(te["ticket_cobrado"]),
-             delta=f"{te['cantidad']} drones (Agras T + Mavic)", delta_color="off", delta_arrow="off",
-             help="Comisión cobrada dividida por unidad vendida, no por operación: una venta puede "
-                  "llevar varios drones."),
-        dict(label="Volumen intermediado", value=formatear_moneda_card(km["volumen_equipos"]),
-             delta="informativo, no es ingreso", delta_color="off", delta_arrow="off"),
-    ], por_fila=3)
-with d2:
-    metricas([
-        dict(label="🚜 Servicios — cobrado", value=formatear_moneda_card(km["cobrado_servicios"]),
-             delta=f"{formatear_porcentaje(km['pct_servicios'])} de lo cobrado", delta_color="off",
-             delta_arrow="off", help=formatear_moneda_completa(km["cobrado_servicios"])),
-        dict(label="Ticket por trabajo", value=formatear_moneda_card(ts["ticket"]),
-             delta=f"{formatear_numero(ts['cantidad'])} trabajos", delta_color="off", delta_arrow="off"),
-        dict(label="Valor por hectárea", value=formatear_moneda_card(ts["valor_por_ha"]),
-             delta=f"{formatear_numero(ts['hectareas'])} ha", delta_color="off", delta_arrow="off"),
-    ], por_fila=3)
+metricas([
+    dict(label="🚁 Equipos — comisión cobrada", value=formatear_moneda_completa(km["cobrada_equipos"])),
+    dict(label="🚁 Ticket por equipo", value=formatear_moneda_completa(te["ticket_cobrado"])),
+    dict(label="🚁 Volumen intermediado", value=formatear_moneda_completa(km["volumen_equipos"])),
+    dict(label="🚜 Servicios — cobrado", value=formatear_moneda_completa(km["cobrado_servicios"])),
+    dict(label="🚜 Ticket por trabajo", value=formatear_moneda_completa(ts["ticket"])),
+    dict(label="🚜 Valor por hectárea", value=formatear_moneda_completa(ts["valor_por_ha"], 2)),
+], por_fila=3)
 
 st.divider()
 # ---------------------------------------------------------------------------
@@ -114,22 +84,25 @@ st.divider()
 # ---------------------------------------------------------------------------
 st.markdown("#### 📉 Análisis detallado")
 
-# Streamlit borra el estado de un widget al cambiar de pagina: se restaura desde _filtro_granularidad
-# (tambien lo usa la exportacion PDF cuando se exporta desde otra pagina)
+# La granularidad se LEE aca (los periodos hacen falta en varias pestanias) pero
+# el selector se dibuja abajo, pegado a los graficos que la usan: arriba parecia
+# afectar al donut y a la serie mensual, que tienen su propio corte.
+# Streamlit borra el estado de un widget al cambiar de pagina: se restaura desde
+# _filtro_granularidad, que ademas usa la exportacion PDF desde otra pagina.
 if "granularidad" not in st.session_state:
     st.session_state["granularidad"] = st.session_state.get("_filtro_granularidad", "Mensual")
-granularidad = st.segmented_control("Granularidad", list(GRANULARIDADES), key="granularidad") or "Mensual"
+granularidad = st.session_state["granularidad"] or "Mensual"
 st.session_state["_filtro_granularidad"] = granularidad
 periodos = ingresos_por_periodo(servicios, ops, granularidad)
 x = eje_x_periodo(periodos, granularidad)
 
-tab_com, tab_eq, tab_serv = st.tabs(["💰 Comisiones", "🚁 Equipos", "🚜 Servicios"])
+tab_com, tab_eq, tab_serv = st.tabs(["💰 Ingresos", "🚁 Equipos", "🚜 Servicios"])
 
 # ---------------------------------------------------------------------------
 with tab_com:
     c1, c2 = st.columns([1, 2])
     with c1:
-        st.subheader("Estado de las comisiones")
+        st.subheader("Estado de cobro")
         estado = pd.DataFrame({"estado": [COBRADO, POR_COBRAR],
                                "monto": [km["comision_cobrada"], km["por_cobrar"]]})
         if hay_datos(estado[estado["monto"] > 0]):
@@ -139,11 +112,9 @@ with tab_com:
             fig.update_traces(sort=False, texttemplate=f"%{{percent:.1%}}<br>%{{value:{ETIQUETA_MONEDA}}}",
                               hovertemplate=f"%{{label}}<br>%{{value:{HOVER_MONEDA}}} (%{{percent:.1%}})<extra></extra>")
             grafico(fig, key="estado_comisiones", eje_moneda=None)
-            st.caption(f"{formatear_porcentaje(km['pct_cobranza'])} de cobranza sobre "
-                       f"{formatear_moneda(km['comision_generada'])} generados.")
 
     with c2:
-        st.subheader("Comisiones cobradas y por cobrar (mensual)")
+        st.subheader("Cobrado y por cobrar (mensual)")
         mensual = comisiones_por_mes(servicios, ops)
         if hay_datos(mensual):
             largo = mensual.melt(id_vars="mes", value_vars=["cobrada", "por_cobrar"],
@@ -157,6 +128,11 @@ with tab_com:
             fig.update_xaxes(tickformat=MES_PLOTLY)
             grafico(fig, key="comisiones_mensuales")
 
+    st.divider()
+    # De aca para abajo si manda la granularidad: el donut y la serie mensual de
+    # arriba tienen su propio corte y no la usan.
+    st.segmented_control("Granularidad", list(GRANULARIDADES), key="granularidad")
+
     c3, c4 = st.columns([1, 2])
     with c3:
         st.subheader("Participación en el ingreso")
@@ -168,7 +144,6 @@ with tab_com:
             fig.update_traces(sort=False, texttemplate=f"%{{percent:.1%}}<br>%{{value:{ETIQUETA_MONEDA}}}",
                               hovertemplate=f"%{{label}}<br>%{{value:{HOVER_MONEDA}}} (%{{percent:.1%}})<extra></extra>")
             grafico(fig, key="participacion_ingreso", eje_moneda=None)
-            st.caption("Sobre comisiones **cobradas**.")
 
     with c4:
         st.subheader(f"Evolución del ingreso ({granularidad.lower()})")
