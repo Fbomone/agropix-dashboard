@@ -57,13 +57,19 @@ st.caption(f"🔎 {leyenda_estados(st.session_state.get('estados_trabajo'), st.s
 # ---------------------------------------------------------------------------
 km = kpis_comisiones(servicios, ops)
 
+# .get() con comision_generada de fallback: es exactamente el mismo valor (uno
+# es alias del otro) y evita que la pagina reviente si Streamlit Cloud quedo con
+# una version vieja de utils/comisiones.py importada en memoria, que es lo que
+# paso en el deploy del 21/09.
+ingresos = km.get("ingresos", km["comision_generada"])
+
 st.markdown("#### 💰 Ingresos")
 tarjetas_kpi([
-    dict(label="💰 Ingresos", valor=formatear_moneda_card(km["ingresos"]), gradiente="cobradas"),
+    dict(label="💰 Ingresos", valor=formatear_moneda_card(ingresos), gradiente="cobradas"),
     dict(label="🌾 Has trabajadas", valor=f"{formatear_numero(km['hectareas'])} ha",
          gradiente="hectareas"),
     dict(label="👥 Clientes", valor=formatear_numero(km["clientes"]), gradiente="generadas"),
-])
+], columnas=3)
 
 # Desglose por tipo de ingreso. Van las 6 en una sola grilla de 3 columnas:
 # dos bloques de st.columns(3) lado a lado no alinean entre si.

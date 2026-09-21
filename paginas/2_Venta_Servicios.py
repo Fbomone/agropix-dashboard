@@ -34,7 +34,7 @@ tarjetas_kpi([
          nota="Por trabajo", gradiente="generadas"),
     dict(label="👥 Clientes", valor=formatear_numero(k["clientes"]),
          nota="Con al menos una venta en el período", gradiente="neutro"),
-])
+], columnas=4)
 
 st.divider()
 g1, g2 = st.columns(2)

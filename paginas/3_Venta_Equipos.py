@@ -37,7 +37,7 @@ tarjetas_kpi([
     dict(label="🛸 Unidades vendidas", valor=formatear_numero(k["unidades"]), gradiente="neutro"),
     dict(label="📦 Volumen intermediado", valor=formatear_moneda_card(k["monto"]),
          gradiente="neutro"),
-])
+], columnas=5)
 
 v = vigentes(ops)
 

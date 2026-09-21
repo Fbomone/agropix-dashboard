@@ -142,39 +142,52 @@ def barras_por(df: pd.DataFrame, columna: str, valor: str = "monto", horizontal:
 # pantalla desde Python (Streamlit no expone esa informacion).
 _CSS_TARJETAS = """
 <style>
-  .agpx-kpis {
+  .agpx-kpis {{
     display: grid; gap: .75rem; margin: .25rem 0 1rem 0;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  }
-  .agpx-kpi {
-    border-radius: 12px; padding: 1rem 1.1rem; color: #FFFFFF;
+    grid-template-columns: {columnas};
+  }}
+  .agpx-kpi {{
+    border-radius: 12px; padding: .9rem 1rem; color: #FFFFFF;
     box-shadow: 0 2px 8px rgba(16,24,40,.12); min-width: 0;
-  }
-  .agpx-kpi .agpx-kpi-label {
-    font-size: .8rem; font-weight: 600; letter-spacing: .03em;
+  }}
+  .agpx-kpi .agpx-kpi-label {{
+    font-size: .78rem; font-weight: 600; letter-spacing: .03em;
     text-transform: uppercase; opacity: .95; line-height: 1.25;
-  }
-  .agpx-kpi .agpx-kpi-valor {
-    font-size: 1.9rem; font-weight: 700; line-height: 1.15; margin: .35rem 0 .1rem 0;
-    overflow-wrap: anywhere;   /* que un numero largo no desborde en mobile */
-  }
-  .agpx-kpi .agpx-kpi-nota { font-size: .78rem; opacity: .92; line-height: 1.3; }
-  @media (max-width: 420px) {
-    .agpx-kpis { grid-template-columns: 1fr; }
-    .agpx-kpi .agpx-kpi-valor { font-size: 1.6rem; }
-  }
+  }}
+  .agpx-kpi .agpx-kpi-valor {{
+    font-size: 1.4rem; font-weight: 700; line-height: 1.2; margin: .3rem 0 .1rem 0;
+    font-variant-numeric: tabular-nums;   /* los montos alinean entre tarjetas */
+    overflow-wrap: anywhere;              /* un numero largo no desborda */
+  }}
+  .agpx-kpi .agpx-kpi-nota {{ font-size: .75rem; opacity: .92; line-height: 1.3; }}
+  /* Tablet: de a dos, que es lo que entra sin achicar el numero */
+  @media (max-width: 860px) {{
+    .agpx-kpis {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+  }}
+  @media (max-width: 480px) {{
+    .agpx-kpis {{ grid-template-columns: 1fr; }}
+    .agpx-kpi .agpx-kpi-valor {{ font-size: 1.3rem; }}
+  }}
 </style>
 """
 
 
-def tarjetas_kpi(tarjetas: list) -> None:
+def tarjetas_kpi(tarjetas: list, columnas: int | None = None) -> None:
     """KPIs destacados con fondo de color.
 
     tarjetas: dicts con label, valor, nota (opcional) y gradiente (clave de
     GRADIENTES_KPI o tupla (claro, oscuro)).
+
+    columnas: cuantas por fila en desktop. Por defecto se acomodan solas
+    (auto-fit), que con pocas tarjetas y la barra lateral abierta las puede
+    partir en dos filas; pasando un numero se fuerza una sola fila.
     """
     if not tarjetas:
         return
+    # minmax(0, 1fr) y no (210px, 1fr): con el minimo en px, si no entran todas
+    # el grid las baja de fila en vez de angostarlas
+    grid = (f"repeat({columnas}, minmax(0, 1fr))" if columnas
+            else "repeat(auto-fit, minmax(200px, 1fr))")
     bloques = []
     for t in tarjetas:
         gradiente = t.get("gradiente", "neutro")
@@ -185,4 +198,5 @@ def tarjetas_kpi(tarjetas: list) -> None:
             f'<div class="agpx-kpi-label">{t["label"]}</div>'
             f'<div class="agpx-kpi-valor">{t["valor"]}</div>{nota}</div>'
         )
-    st.html(f'{_CSS_TARJETAS}<div class="agpx-kpis">{"".join(bloques)}</div>')
+    st.html(_CSS_TARJETAS.format(columnas=grid)
+            + f'<div class="agpx-kpis">{"".join(bloques)}</div>')
