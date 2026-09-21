@@ -16,7 +16,7 @@ import streamlit as st
 from utils import envio_log
 from utils.auth import ADMINS, EMAILS_AUTORIZADOS, audit_log, cargar_usuarios, sesion_es_admin
 from utils.data import aplicar_filtros
-from utils.email_sender import configurado, enviar_individual, validar_conexion
+from utils.email_sender import configurado, enviar_individual, transporte, validar_conexion
 from utils.format import formatear_moneda, formatear_numero
 from utils.reporte_semanal import (
     DESTINATARIOS, asunto, cuerpo_html, etiqueta_periodo, kpis_semana, nombre_pdf, semana_cerrada,
@@ -156,8 +156,16 @@ with tab_envio:
 # ---------------------------------------------------------------------------
 with tab_validacion:
     st.subheader("Validación del envío")
-    st.caption("Consulta la API de SendGrid sin mandar ningún mail: comprueba que la key sirva y "
-               "que el remitente esté verificado, que es la causa más común de un 403 al enviar.")
+    via = transporte()
+    if via == "smtp":
+        st.caption("Vía activa: **SMTP (Gmail)**. Conecta y autentica sin mandar ningún mail.")
+    elif via == "sendgrid":
+        st.caption("Vía activa: **SendGrid**. Consulta la API sin mandar nada: comprueba que la "
+                   "key sirva y que el remitente esté verificado, que es la causa más común de "
+                   "un 403 al enviar.")
+    else:
+        st.caption("No hay vía de envío configurada. Cargá `[smtp]` con un App Password de Gmail, "
+                   "o `[sendgrid]` con una API key.")
 
     if st.button("🔌 Probar la conexión", width="stretch"):
         with st.spinner("Consultando SendGrid…"):

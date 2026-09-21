@@ -45,18 +45,35 @@ class ErrorEnvioEmail(RuntimeError):
     """Falla de envio con un mensaje pensado para mostrarle al usuario."""
 
 
+SMTP, SENDGRID = "smtp", "sendgrid"
+
+
+def transporte() -> str | None:
+    """Que via de envio esta configurada: SMTP, SENDGRID o None.
+
+    SMTP tiene prioridad porque no depende de una cuenta de terceros: si estan
+    los dos cargados, gana el que anda seguro.
+    """
+    from utils import email_smtp
+
+    if email_smtp.configurado()[0]:
+        return SMTP
+    if SENDGRID_API_KEY and EMAIL_REMITENTE:
+        return SENDGRID
+    return None
+
+
 def configurado() -> tuple[bool, str]:
     """(listo, motivo). `listo` es False si falta configuracion; `motivo` lo explica."""
-    if not SENDGRID_API_KEY:
-        return False, "Falta SENDGRID_API_KEY en los secrets."
-    if not EMAIL_REMITENTE:
-        return False, "Falta EMAIL_REMITENTE (Single Sender verificado en SendGrid)."
-    if not EMAIL_DESTINATARIOS:
-        return False, "Falta EMAIL_DESTINATARIOS (lista separada por comas)."
-    try:
-        import sendgrid  # noqa: F401
-    except ImportError:
-        return False, "Falta el paquete sendgrid: pip install -r requirements.txt"
+    via = transporte()
+    if via is None:
+        return False, ("No hay vía de envío configurada. Cargá SMTP_USER + SMTP_PASSWORD "
+                       "(App Password de Gmail) o SENDGRID_API_KEY + EMAIL_REMITENTE.")
+    if via == SENDGRID:
+        try:
+            import sendgrid  # noqa: F401
+        except ImportError:
+            return False, "Falta el paquete sendgrid: pip install -r requirements.txt"
     return True, ""
 
 
@@ -83,22 +100,31 @@ def enviar_reporte(
     if not pdf_bytes:
         raise ErrorEnvioEmail("No hay PDF para enviar: generá el reporte primero.")
 
+    destino = destinatarios or EMAIL_DESTINATARIOS
+    if not destino:
+        raise ErrorEnvioEmail("No hay destinatarios: cargá EMAIL_DESTINATARIOS en los secrets.")
+    cuerpo = html or CUERPO_HTML.format(
+        intro=intro,
+        periodo=periodo or "todo el histórico",
+        momento=datetime.now().strftime("%d/%m/%Y %H:%M"),
+    )
+
+    if transporte() == SMTP:
+        from utils import email_smtp
+
+        try:
+            return email_smtp.enviar(destino, asunto, cuerpo, pdf_bytes, nombre_archivo,
+                                     remitente=EMAIL_REMITENTE)
+        except RuntimeError as e:
+            raise ErrorEnvioEmail(str(e)) from e
+
     from sendgrid import SendGridAPIClient
     from sendgrid.helpers.mail import (
         Attachment, Disposition, FileContent, FileName, FileType, Mail,
     )
 
-    destino = destinatarios or EMAIL_DESTINATARIOS
-    mensaje = Mail(
-        from_email=EMAIL_REMITENTE,
-        to_emails=destino,
-        subject=asunto,
-        html_content=html or CUERPO_HTML.format(
-            intro=intro,
-            periodo=periodo or "todo el histórico",
-            momento=datetime.now().strftime("%d/%m/%Y %H:%M"),
-        ),
-    )
+    mensaje = Mail(from_email=EMAIL_REMITENTE, to_emails=destino, subject=asunto,
+                   html_content=cuerpo)
     mensaje.attachment = Attachment(
         FileContent(base64.b64encode(pdf_bytes).decode()),
         FileName(nombre_archivo),
@@ -135,6 +161,11 @@ def validar_conexion() -> dict:
     if not listo:
         return {"exitoso": False, "mensaje": motivo,
                 "detalles": {"configuracion": "incompleta"}}
+
+    if transporte() == SMTP:
+        from utils import email_smtp
+
+        return email_smtp.validar_conexion()
 
     detalles = {
         "proveedor": "SendGrid (HTTPS, API v3)",

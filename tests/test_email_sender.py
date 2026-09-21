@@ -8,6 +8,11 @@ from utils import email_sender
 
 @pytest.fixture
 def configurado(monkeypatch):
+    """SendGrid configurado y SMTP apagado: es el camino que prueban estos tests."""
+    from utils import email_smtp
+
+    monkeypatch.setattr(email_smtp, "SMTP_USER", "")
+    monkeypatch.setattr(email_smtp, "SMTP_PASSWORD", "")
     monkeypatch.setattr(email_sender, "SENDGRID_API_KEY", "SG.de-prueba")
     monkeypatch.setattr(email_sender, "EMAIL_REMITENTE", "reportes@agropix.com")
     monkeypatch.setattr(email_sender, "EMAIL_DESTINATARIOS", ["dueno@agropix.com"])
@@ -34,12 +39,94 @@ def cliente_falso(monkeypatch):
     return enviados
 
 
-@pytest.mark.parametrize("faltante", ["SENDGRID_API_KEY", "EMAIL_REMITENTE", "EMAIL_DESTINATARIOS"])
-def test_sin_configuracion_no_esta_listo(configurado, monkeypatch, faltante):
-    monkeypatch.setattr(email_sender, faltante, "" if "EMAIL_DEST" not in faltante else [])
+@pytest.mark.parametrize("faltante", ["SENDGRID_API_KEY", "EMAIL_REMITENTE"])
+def test_sin_via_de_envio_no_esta_listo(configurado, monkeypatch, faltante):
+    monkeypatch.setattr(email_sender, faltante, "")
     listo, motivo = email_sender.configurado()
     assert listo is False
     assert motivo
+
+
+def test_la_lista_global_de_destinatarios_no_hace_falta_para_estar_configurado(
+        configurado, monkeypatch):
+    """El panel de administración elige los destinatarios en cada envío."""
+    monkeypatch.setattr(email_sender, "EMAIL_DESTINATARIOS", [])
+    assert email_sender.configurado() == (True, "")
+
+
+def test_enviar_sin_destinatarios_falla_al_enviar(configurado, monkeypatch):
+    monkeypatch.setattr(email_sender, "EMAIL_DESTINATARIOS", [])
+    with pytest.raises(email_sender.ErrorEnvioEmail, match="No hay destinatarios"):
+        email_sender.enviar_reporte(b"%PDF-1.4", "r.pdf")
+
+
+# ---------------------------------------------------------------------------
+# Eleccion de transporte
+# ---------------------------------------------------------------------------
+def test_con_smtp_configurado_gana_smtp(configurado, monkeypatch):
+    """SMTP primero: no depende de una cuenta de terceros."""
+    from utils import email_smtp
+
+    monkeypatch.setattr(email_smtp, "SMTP_USER", "infoagropix@gmail.com")
+    monkeypatch.setattr(email_smtp, "SMTP_PASSWORD", "abcd efgh ijkl mnop")
+    assert email_sender.transporte() == email_sender.SMTP
+
+
+def test_sin_smtp_se_usa_sendgrid(configurado, monkeypatch):
+    from utils import email_smtp
+
+    monkeypatch.setattr(email_smtp, "SMTP_USER", "")
+    monkeypatch.setattr(email_smtp, "SMTP_PASSWORD", "")
+    assert email_sender.transporte() == email_sender.SENDGRID
+
+
+def test_sin_ninguno_no_hay_transporte(monkeypatch):
+    from utils import email_smtp
+
+    monkeypatch.setattr(email_smtp, "SMTP_USER", "")
+    monkeypatch.setattr(email_smtp, "SMTP_PASSWORD", "")
+    monkeypatch.setattr(email_sender, "SENDGRID_API_KEY", "")
+    assert email_sender.transporte() is None
+    listo, motivo = email_sender.configurado()
+    assert listo is False
+    assert "SMTP_USER" in motivo and "SENDGRID_API_KEY" in motivo
+
+
+def test_el_envio_por_smtp_usa_el_modulo_smtp(configurado, monkeypatch):
+    from utils import email_smtp
+
+    monkeypatch.setattr(email_smtp, "SMTP_USER", "infoagropix@gmail.com")
+    monkeypatch.setattr(email_smtp, "SMTP_PASSWORD", "abcd efgh ijkl mnop")
+    llamadas = {}
+
+    def falso(destinatarios, asunto, html, pdf_bytes=None, nombre_archivo="", remitente=""):
+        llamadas.update(destinatarios=destinatarios, asunto=asunto, html=html,
+                        pdf=pdf_bytes, archivo=nombre_archivo)
+        return list(destinatarios)
+
+    monkeypatch.setattr(email_smtp, "enviar", falso)
+    enviados = email_sender.enviar_reporte(b"%PDF-1.4", "reporte.pdf",
+                                           destinatarios=["uno@agropix.com"],
+                                           asunto="Prueba", html="<p>hola</p>")
+    assert enviados == ["uno@agropix.com"]
+    assert llamadas["asunto"] == "Prueba"
+    assert llamadas["archivo"] == "reporte.pdf"
+    assert llamadas["pdf"] == b"%PDF-1.4"
+
+
+def test_un_error_de_smtp_se_traduce_a_error_de_envio(configurado, monkeypatch):
+    """El resto del código no debería tener que distinguir el transporte."""
+    from utils import email_smtp
+
+    monkeypatch.setattr(email_smtp, "SMTP_USER", "infoagropix@gmail.com")
+    monkeypatch.setattr(email_smtp, "SMTP_PASSWORD", "abcd efgh ijkl mnop")
+
+    def falla(*_a, **_k):
+        raise RuntimeError("Gmail rechazó usuario o contraseña.")
+
+    monkeypatch.setattr(email_smtp, "enviar", falla)
+    with pytest.raises(email_sender.ErrorEnvioEmail, match="App Password|contraseña"):
+        email_sender.enviar_reporte(b"%PDF-1.4", "r.pdf", destinatarios=["x@agropix.com"])
 
 
 def test_configuracion_completa(configurado):

@@ -152,14 +152,26 @@ sigue funcionando (la exportación está en un `try/except`).
 reinicio**. Si los precios tienen que persistir, hay que moverlos a un Sheet o
 a una DB.
 
-**Email (SendGrid).** El botón "Enviar por mail" aparece sólo si están los tres
-secrets. Se aceptan dos formas equivalentes: claves planas
-(`SENDGRID_API_KEY`, `EMAIL_REMITENTE`, `EMAIL_DESTINATARIOS`) o la tabla
-`[sendgrid]` con `api_key` / `from_email` / `destinatarios`. El
-remitente tiene que estar verificado en SendGrid → *Settings → Sender
-Authentication*, sino la API devuelve 403 aunque la key sea válida. Plan gratis:
-100 mails/día. El envío es manual (un botón); un envío programado necesita un
-scheduler externo, que Community Cloud no tiene.
+**Email.** Hay dos vías y se elige sola: si está `[smtp]` cargado gana ése, si
+no, `[sendgrid]`. El botón de enviar no aparece hasta que una de las dos esté
+configurada, y dice cuál falta.
+
+*Gmail (recomendada).* No necesita cuenta de terceros. En los secrets:
+
+```toml
+[smtp]
+user = "infoagropix@gmail.com"
+password = "xxxx xxxx xxxx xxxx"   # App Password, NO la contraseña de la cuenta
+```
+
+El App Password sale de <https://myaccount.google.com/apppasswords> y requiere
+tener la verificación en dos pasos activada. Gmail admite ~500 destinatarios por
+día: con 7 personas una vez por semana sobra. Si Google rechaza la contraseña,
+el panel lo dice con esas palabras en vez de un error genérico.
+
+*SendGrid.* Requiere crear la cuenta y verificar el remitente en *Settings →
+Sender Authentication*, sino la API devuelve 403 aunque la key sea válida. Plan
+gratis: 100 mails/día.
 
 ---
 

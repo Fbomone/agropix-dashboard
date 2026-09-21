@@ -70,8 +70,25 @@ def _sendgrid(clave: str) -> str:
     return "" if valor.lower().startswith("placeholder") else valor
 
 
+# SMTP (Gmail). Alternativa a SendGrid: no necesita cuenta de terceros, sirve la
+# casilla de Gmail que ya existe con un App Password.
+def _smtp(clave: str) -> str:
+    try:
+        tabla = _secrets().get("smtp") or {}
+        valor = str(dict(tabla).get(clave, "")).strip()
+    except Exception:
+        return ""
+    return "" if valor.lower().startswith("placeholder") else valor
+
+
+SMTP_HOST = _cfg("SMTP_HOST") or _smtp("host") or "smtp.gmail.com"
+SMTP_PORT = int(_cfg("SMTP_PORT") or _smtp("port") or 587)
+SMTP_USER = _cfg("SMTP_USER") or _smtp("user")
+SMTP_PASSWORD = _cfg("SMTP_PASSWORD") or _smtp("password")
+
 SENDGRID_API_KEY = _cfg("SENDGRID_API_KEY") or _sendgrid("api_key")
-EMAIL_REMITENTE = _cfg("EMAIL_REMITENTE") or _sendgrid("from_email") or "reportes@agropix.com"
+EMAIL_REMITENTE = (_cfg("EMAIL_REMITENTE") or _sendgrid("from_email") or SMTP_USER
+                   or "reportes@agropix.com")
 EMAIL_DESTINATARIOS = [
     d.strip()
     for d in (_cfg("EMAIL_DESTINATARIOS") or _sendgrid("destinatarios")).split(",")
