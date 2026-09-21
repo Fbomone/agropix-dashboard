@@ -26,7 +26,7 @@
       reiniciar en Cloud. Mover a un Sheet o DB.
 - [x] Comisiones como métrica central: utils/comisiones.py + tarjetas de KPI,
       tabs, top clientes, vendedores por comisión cobrada y corte por canal
-- [x] Reporte semanal automático: GitHub Actions viernes 9:30 ART (ver DEPLOY.md)
+- [x] Reporte semanal automático: GitHub Actions lunes 8:00 ART (ver DEPLOY.md)
 - [ ] Mobile: solo las tarjetas de KPI son responsive; faltan gráficos, tablas
       y modo oscuro
 - [ ] Chat con IA (fase 2)

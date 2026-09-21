@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Genera y envia el reporte semanal de Agropix. Corre fuera de Streamlit.
 
-Lo dispara .github/workflows/reporte-semanal.yml los viernes 9:30 ART. Tambien
+Lo dispara .github/workflows/reporte-semanal.yml los lunes 8:00 ART. Tambien
 se puede correr a mano:
 
     # Sin enviar nada: imprime los numeros y guarda el PDF en ./salida/

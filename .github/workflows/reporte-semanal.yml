@@ -1,13 +1,16 @@
 name: Reporte semanal Agropix
 
-# Viernes 9:30 ART. Argentina usa UTC-3 todo el año (no mueve los relojes desde
-# 2009), así que 9:30 ART = 12:30 UTC de forma estable.
+# Lunes 8:00 ART. Argentina usa UTC-3 todo el año (no mueve los relojes desde
+# 2009), así que 8:00 ART = 11:00 UTC de forma estable.
+#
+# Sale el lunes y reporta la semana anterior completa (lunes a domingo): el mail
+# del lunes 21/09 trae del 14/09 al 20/09.
 #
 # Corre acá y no dentro de la app porque Streamlit Community Cloud duerme la app
 # cuando nadie la visita: un scheduler en un thread de la app se muere con ella.
 on:
   schedule:
-    - cron: "30 12 * * 5"
+    - cron: "0 11 * * 1"
   # Para probarlo cuando quieras desde la pestaña Actions
   workflow_dispatch:
     inputs:

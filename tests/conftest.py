@@ -30,4 +30,5 @@ def sin_secrets_de_streamlit(monkeypatch):
     from utils import auth, data
 
     monkeypatch.setattr(auth, "_seccion_secrets", lambda _n: {}, raising=False)
+    monkeypatch.setattr(auth, "_password_comun", lambda: "", raising=False)
     monkeypatch.setattr(data, "precios_de_secrets", lambda: {}, raising=False)

@@ -257,3 +257,51 @@ def test_el_logout_borra_el_rol(sesion):
     auth.cerrar_sesion()
     assert "auth_rol" not in sesion
     assert auth.sesion_es_admin() is False
+
+
+# ---------------------------------------------------------------------------
+# Contrasena compartida (AUTH_PASSWORD)
+# ---------------------------------------------------------------------------
+def test_la_clave_comun_habilita_a_todos_los_autorizados(monkeypatch):
+    monkeypatch.setattr(auth, "_seccion_secrets", lambda _n: {})
+    monkeypatch.setattr(auth, "_password_comun", lambda: "AgropixEquipo2026")
+
+    usuarios = auth.cargar_usuarios()
+    assert set(usuarios) == set(auth.EMAILS_AUTORIZADOS)
+    assert all(p == "AgropixEquipo2026" for p in usuarios.values())
+    for email in auth.EMAILS_AUTORIZADOS:
+        assert auth.verificar_credenciales(email, "AgropixEquipo2026")
+
+
+def test_la_clave_comun_no_habilita_a_un_email_ajeno(monkeypatch):
+    monkeypatch.setattr(auth, "_seccion_secrets", lambda _n: {})
+    monkeypatch.setattr(auth, "_password_comun", lambda: "AgropixEquipo2026")
+    assert auth.verificar_credenciales("intruso@gmail.com", "AgropixEquipo2026") is None
+
+
+def test_una_clave_propia_le_gana_a_la_comun(monkeypatch):
+    monkeypatch.setattr(auth, "_seccion_secrets",
+                        lambda _n: {"matias21tossen_gmail_com": "solo-de-matias"})
+    monkeypatch.setattr(auth, "_password_comun", lambda: "AgropixEquipo2026")
+
+    assert auth.verificar_credenciales("matias21tossen@gmail.com", "solo-de-matias")
+    assert auth.verificar_credenciales("matias21tossen@gmail.com", "AgropixEquipo2026") is None
+    # El resto sigue entrando con la comun
+    assert auth.verificar_credenciales("ggaletto.gg@gmail.com", "AgropixEquipo2026")
+
+
+def test_sin_clave_comun_ni_propia_no_entra_nadie(monkeypatch):
+    monkeypatch.setattr(auth, "_seccion_secrets", lambda _n: {})
+    monkeypatch.setattr(auth, "_password_comun", lambda: "")
+    assert auth.cargar_usuarios() == {}
+
+
+def test_la_clave_comun_conserva_los_roles(monkeypatch):
+    """Compartir la contrasena no convierte a todos en admin."""
+    monkeypatch.setattr(auth, "_seccion_secrets", lambda _n: {})
+    monkeypatch.setattr(auth, "_password_comun", lambda: "AgropixEquipo2026")
+
+    admin = auth.verificar_credenciales("francobomone14@gmail.com", "AgropixEquipo2026")
+    comun = auth.verificar_credenciales("matias21tossen@gmail.com", "AgropixEquipo2026")
+    assert admin["rol"] == "admin"
+    assert comun["rol"] == "usuario"

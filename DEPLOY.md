@@ -205,16 +205,17 @@ Activity Feed de SendGrid.
 
 ## 7. Reporte semanal automático (GitHub Actions)
 
-Viernes 9:30 ART, a los 7 destinatarios, con el PDF de 4 carillas adjunto.
+Lunes 8:00 ART, con el PDF de 4 carillas adjunto. Reporta la semana que acaba
+de cerrar: el mail del lunes 21/09 trae del lunes 14/09 al domingo 20/09.
 
 **Por qué no corre dentro de la app:** Streamlit Community Cloud duerme la app
 cuando nadie la visita y mata el proceso. Un scheduler con `schedule` en un
-thread se muere con ella y no se despierta solo: los viernes sin visitas el mail
+thread se muere con ella y no se despierta solo: los lunes sin visitas el mail
 no saldría, y sin aviso. El cron de Actions corre en GitHub, no depende de que
 la app esté viva.
 
-`.github/workflows/reporte-semanal.yml` → cron `30 12 * * 5`. Argentina usa
-UTC-3 todo el año (no mueve los relojes desde 2009), así que 12:30 UTC = 9:30 ART
+`.github/workflows/reporte-semanal.yml` → cron `0 11 * * 1`. Argentina usa
+UTC-3 todo el año (no mueve los relojes desde 2009), así que 11:00 UTC = 8:00 ART
 de forma estable.
 
 ### Secrets que hay que cargar en GitHub
@@ -233,7 +234,7 @@ Settings → Secrets and variables → Actions → *New repository secret*:
 Son **secrets de GitHub**, aparte de los de Streamlit Cloud: son dos entornos
 distintos y cada uno necesita los suyos.
 
-### Probarlo sin esperar al viernes
+### Probarlo sin esperar al lunes
 
 Actions → *Reporte semanal Agropix* → **Run workflow**, con `dry_run` en `true`:
 genera el PDF y lo deja como artifact descargable, sin enviar nada. En local:

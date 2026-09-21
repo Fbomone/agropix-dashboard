@@ -1,20 +1,20 @@
 """Reporte semanal de Agropix: periodo, KPIs y cuerpo del mail.
 
 Se ejecuta fuera de Streamlit, desde scripts/enviar_reporte_semanal.py, que a su
-vez corre en GitHub Actions los viernes 9:30 ART. Aca va solo la logica pura
+vez corre en GitHub Actions los lunes 8:00 ART. Aca va solo la logica pura
 (que semana, que numeros, que texto); el envio y el armado del PDF van aparte.
 
 Por que GitHub Actions y no `schedule` + thread dentro de la app
 ---------------------------------------------------------------
 Streamlit Community Cloud duerme la app cuando nadie la visita y mata el
 proceso. Un scheduler en un thread de la app se muere con ella y no se despierta
-solo, asi que los viernes sin visitas el mail no saldria. El cron de Actions
+solo, asi que los lunes sin visitas el mail no saldria. El cron de Actions
 corre en la infraestructura de GitHub, no depende de que la app este viva.
 
 Zona horaria
 ------------
 Argentina usa UTC-3 todo el año (no mueve los relojes desde 2009), asi que
-9:30 ART son 12:30 UTC de forma estable. Igual el periodo se calcula con
+8:00 ART son 11:00 UTC de forma estable. Igual el periodo se calcula con
 zoneinfo y no con offsets a mano.
 """
 from __future__ import annotations
@@ -32,13 +32,13 @@ TZ_ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
 # Destinatarios del reporte semanal. Se pueden sobreescribir desde los secrets
 # con EMAIL_DESTINATARIOS (lista separada por comas).
 DESTINATARIOS = (
-    "francobomone14@gmail.com",
-    "fabiocailletbois@gmail.com",
-    "ggaletto.gg@gmail.com",
-    "ignacio.ramello879@gmail.com",
-    "nicotobaldi55@gmail.com",
-    "infoagropix@gmail.com",
-    "matias21tossen@gmail.com",
+    "francobomone14@gmail.com",     # Franco
+    "matias21tossen@gmail.com",     # Matias
+    "ggaletto.gg@gmail.com",        # Guido
+    "ignacio.ramello879@gmail.com", # Ignacio
+    "nicotobaldi55@gmail.com",      # Luciano
+    "fabiocailletbois@gmail.com",   # Fabio
+    "infoagropix@gmail.com",        # Agropix
 )
 
 
@@ -52,9 +52,10 @@ def ahora_argentina() -> datetime:
 def semana_cerrada(hoy: date | datetime | None = None) -> tuple[date, date]:
     """(lunes, domingo) de la ultima semana COMPLETA antes de `hoy`.
 
-    El mail sale los viernes, asi que la semana que se reporta es la anterior
-    (lunes a domingo ya cerrados). Reportar lunes-a-hoy daria una semana
-    incompleta y los numeros no serian comparables entre envios.
+    El mail sale los lunes temprano, asi que la semana que se reporta es la que
+    acaba de cerrar: el envio del lunes 21/09 trae del 14/09 al 20/09. Reportar
+    lunes-a-hoy daria una semana incompleta y los numeros no serian comparables
+    entre envios.
     """
     if hoy is None:
         hoy = ahora_argentina()
@@ -197,10 +198,16 @@ def cuerpo_html(k: dict, desde: date, hasta: date, clientes: pd.DataFrame | None
 
   {_tabla_clientes(clientes)}
 
-  <p style="margin:24px 0">
+  <p style="margin:24px 0 8px 0">
     <a href="{url_app}" style="background:#2E7D32;color:#FFFFFF;text-decoration:none;
        padding:12px 22px;border-radius:8px;font-weight:700;display:inline-block">
       Ver reporte completo en Streamlit</a>
+  </p>
+  <!-- El link tambien en texto: hay clientes que no pintan el boton, y en el
+       celular a veces es mas comodo copiarlo que tocarlo -->
+  <p style="margin:0 0 20px 0;font-size:12px;color:#5D6D7E;line-height:1.5">
+    Si el botón no funciona, copiá y pegá este link:<br>
+    <a href="{url_app}" style="color:#1565C0;word-break:break-all">{url_app}</a>
   </p>
 
   <div style="border-left:4px solid #1565C0;background:#EEF4FB;color:#123B66;

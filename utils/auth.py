@@ -58,6 +58,13 @@ ARCHIVO_AUDITORIA = Path(os.getenv("AGROPIX_AUDIT_LOG", "data/auditoria.log"))
 
 SECCION_SECRETS = "auth_users"
 
+# Una sola contrasena para todo el equipo, en los secrets como AUTH_PASSWORD.
+# Alcanza con eso para habilitar a todos; [auth_users] queda para pisarsela a
+# alguien en particular. Lo que se pierde: si se filtra, hay que rotarla para
+# todos. Lo que NO se pierde: la auditoria sigue distinguiendo por email, asi
+# que igual se ve quien entro y cuando.
+CLAVE_COMUN = "AUTH_PASSWORD"
+
 # Quien puede entrar. El valor es la clave dentro de [auth_users]: es el email
 # con "@" y "." cambiados por "_", porque TOML no los admite en una clave simple.
 # Para dar de alta a alguien: agregar la linea aca y su contrasena en los secrets.
@@ -116,20 +123,30 @@ def _seccion_secrets(nombre: str) -> dict:
         return {}
 
 
+def _password_comun() -> str:
+    """AUTH_PASSWORD de los secrets: la clave compartida por todo el equipo."""
+    try:
+        return str(st.secrets.get(CLAVE_COMUN, "") or "").strip()
+    except Exception:
+        return ""
+
+
 def cargar_usuarios() -> dict[str, str]:
     """Usuarios autorizados desde Streamlit Secrets, como {email: contrasena}.
 
-    En local se leen de .streamlit/secrets.toml; en Streamlit Cloud, de
-    Settings -> Secrets. Los emails de EMAILS_AUTORIZADOS que no tengan
-    contrasena cargada quedan afuera, asi un secret a medio configurar no
+    Cada email de EMAILS_AUTORIZADOS usa su contrasena propia de [auth_users]
+    si la tiene, y si no la compartida (AUTH_PASSWORD). Sin ninguna de las dos
+    el email queda listado pero no entra: un secret a medio configurar no
     habilita a nadie.
 
-    Se lee en cada rerun a proposito: cambiar un secret en Cloud tiene efecto
-    sin necesidad de un nuevo deploy.
+    En local se lee de .streamlit/secrets.toml; en Streamlit Cloud, de
+    Settings -> Secrets. Se relee en cada rerun a proposito: cambiar un secret
+    en Cloud tiene efecto sin necesidad de un nuevo deploy.
     """
     seccion = _seccion_secrets(SECCION_SECRETS)
+    comun = _password_comun()
     usuarios = {
-        email: str(seccion.get(clave, "") or "").strip()
+        email: (str(seccion.get(clave, "") or "").strip() or comun)
         for email, clave in EMAILS_AUTORIZADOS.items()
     }
     return {email: password for email, password in usuarios.items() if password}

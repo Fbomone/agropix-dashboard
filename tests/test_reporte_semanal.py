@@ -292,3 +292,34 @@ def test_corrido_a_mano_el_envio_se_marca_manual(monkeypatch, tmp_path):
 
     script.main(["--desde", "2026-09-07", "--hasta", "2026-09-13"])
     assert envio_log.historial(archivo=archivo)[0]["tipo"] == "MANUAL"
+
+
+# ---------------------------------------------------------------------------
+# Link a la app
+# ---------------------------------------------------------------------------
+def test_el_link_apunta_a_la_app_de_produccion():
+    assert rs.URL_APP == "https://agropix-dashboard-rlugsmacrmmzqtonnbqw9.streamlit.app"
+
+
+def test_el_link_va_en_el_boton_y_tambien_en_texto_copiable():
+    """Hay clientes de correo que no pintan el botón; el link tiene que estar visible."""
+    html = rs.cuerpo_html(rs.kpis_semana(datos()), date(2026, 9, 14), date(2026, 9, 20))
+    assert html.count(rs.URL_APP) >= 3, "debería estar en el href del botón, en el href del texto y visible"
+    assert "copiá y pegá" in html
+    assert f">{rs.URL_APP}</a>" in html, "el link tiene que verse escrito, no sólo como destino"
+
+
+def test_el_horario_del_cron_es_lunes_8am_argentina():
+    """0 11 * * 1 = lunes 11:00 UTC = 8:00 ART (Argentina es UTC-3 todo el año)."""
+    from pathlib import Path
+
+    workflow = (Path(rs.__file__).resolve().parent.parent
+                / ".github" / "workflows" / "reporte-semanal.yml").read_text(encoding="utf-8")
+    assert 'cron: "0 11 * * 1"' in workflow
+
+
+def test_el_mail_del_lunes_21_reporta_del_14_al_20():
+    """El caso exacto que pidió Franco."""
+    desde, hasta = rs.semana_cerrada(date(2026, 9, 21))
+    assert (desde, hasta) == (date(2026, 9, 14), date(2026, 9, 20))
+    assert rs.asunto(desde, hasta) == "Reporte Semanal Agropix - [Lunes 14/09 - Domingo 20/09]"
