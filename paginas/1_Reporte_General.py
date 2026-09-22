@@ -3,8 +3,9 @@ import plotly.express as px
 import streamlit as st
 
 from utils.comisiones import (
-    MARCAS_PRINCIPALES, cobertura_atribucion, comisiones_por_canal, equipos_por_modelo, kpis_comisiones, ranking_vendedores, ticket_promedio_equipos,
-    ticket_promedio_servicios, top_clientes,
+    MARCAS_PRINCIPALES, cobertura_atribucion, comisiones_por_canal, equipos_por_modelo,
+    kpis_comisiones, ranking_vendedores, ticket_promedio_equipos, ticket_promedio_servicios,
+    top_clientes,
 )
 from utils.data import (
     COBRADO, EQUIPOS, GRANULARIDADES, POR_COBRAR, SERVICIO, ingresos_por_periodo, kpis_general,
@@ -16,8 +17,8 @@ from utils.format import (
     formatear_moneda_completa, formatear_numero, formatear_porcentaje,
 )
 from utils.ui import (
-    columna_moneda, espacio_para_etiquetas, grafico, hay_datos, leyenda_estados, metricas,
-    tarjetas_kpi,
+    aviso_sin_datos, columna_moneda, espacio_para_etiquetas, grafico, hay_datos,
+    leyenda_estados, metricas, tarjetas_kpi,
 )
 
 datos = st.session_state["datos"]
@@ -83,6 +84,11 @@ metricas([
     dict(label="🚜 Ticket por trabajo", value=formatear_moneda_completa(ts["ticket"])),
     dict(label="🚜 Valor por hectárea", value=formatear_moneda_completa(ts["valor_por_ha"], 2)),
 ], por_fila=3)
+
+# Un unico aviso: antes cada grafico avisaba por su cuenta y una pagina vacia
+# repetia el mismo mensaje trece veces
+if aviso_sin_datos(servicios, ops, que="movimiento"):
+    st.stop()
 
 st.divider()
 # ---------------------------------------------------------------------------

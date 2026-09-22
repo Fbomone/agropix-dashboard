@@ -488,8 +488,11 @@ def resumen_operadores(largo: pd.DataFrame) -> pd.DataFrame:
         "trabajos_acompanado": l[~l["solo"]].groupby("operador")["fila_sheet"].nunique(),
     }).fillna(0)
     r = r.astype({"trabajos": "int64", "trabajos_solo": "int64", "trabajos_acompanado": "int64"})
-    r["pct_solo"] = r["trabajos_solo"] / r["trabajos"]
-    r["pct_acompanado"] = r["trabajos_acompanado"] / r["trabajos"]
+    # groupby garantiza trabajos >= 1, pero una division sin red da inf si algun
+    # dia cambia el agrupamiento; con 0 el porcentaje correcto es 0
+    base = r["trabajos"].where(r["trabajos"] > 0)
+    r["pct_solo"] = (r["trabajos_solo"] / base).fillna(0.0)
+    r["pct_acompanado"] = (r["trabajos_acompanado"] / base).fillna(0.0)
     r = r.rename_axis("operador").reset_index()
     return r.sort_values(["has", "trabajos"], ascending=False).reset_index(drop=True)[columnas]
 
