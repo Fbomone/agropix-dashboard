@@ -16,13 +16,13 @@ name: 2 · Test — Franco y Matías
 # semanas. Un `cron: "0 1 * * 2"` en cambio le mandaria un reporte duplicado a
 # Matias cada martes para siempre.
 #
-# 0 1 23 9 * = 23/09 01:00 UTC = 22/09 22:00 en Argentina (UTC-3).
+# 0 0 23 9 * = 23/09 00:00 UTC = 22/09 21:00 en Argentina (UTC-3).
 #
 # Una vez que el ensayo salga bien, borrar el bloque `schedule:` entero. El
 # workflow vuelve a ser solo-manual, que es como tiene que quedar.
 on:
   schedule:
-    - cron: "0 1 23 9 *"
+    - cron: "0 0 23 9 *"
   workflow_dispatch:
     inputs:
       fecha_corte:
