@@ -19,8 +19,8 @@ from utils.data import aplicar_filtros
 from utils.email_sender import configurado, enviar_individual, transporte, validar_conexion
 from utils.format import formatear_moneda, formatear_numero
 from utils.reporte_semanal import (
-    DESTINATARIOS, asunto, cuerpo_html, etiqueta_periodo, kpis_semana, nombre_pdf, semana_cerrada,
-    top_clientes_semana,
+    DESTINATARIOS, asunto, cuerpo_html, etiqueta_periodo, kpis_semana, nombre_pdf,
+    semana_reporte, top_clientes_semana,
 )
 from utils.version import VERSION, resumen_entorno
 
@@ -64,7 +64,7 @@ with tab_envio:
     with c2:
         st.markdown("**Período del reporte**")
         opciones = {
-            "Semana anterior (la del envío automático)": "semana_anterior",
+            "Semana del reporte (viernes a viernes)": "semana_anterior",
             "Esta semana (en curso)": "esta_semana",
             "Últimos 7 días": "ultimos_7",
             "Personalizado": "personalizado",
@@ -74,7 +74,7 @@ with tab_envio:
         hoy = date.today()
 
         if modo == "semana_anterior":
-            desde, hasta = semana_cerrada(hoy)
+            desde, hasta = semana_reporte(hoy)
         elif modo == "esta_semana":
             desde, hasta = hoy - timedelta(days=hoy.weekday()), hoy
         elif modo == "ultimos_7":

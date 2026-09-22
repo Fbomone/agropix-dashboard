@@ -1,20 +1,20 @@
 """Reporte semanal de Agropix: periodo, KPIs y cuerpo del mail.
 
 Se ejecuta fuera de Streamlit, desde scripts/enviar_reporte_semanal.py, que a su
-vez corre en GitHub Actions los lunes 8:00 ART. Aca va solo la logica pura
+vez corre en GitHub Actions los viernes 18:00 ART. Aca va solo la logica pura
 (que semana, que numeros, que texto); el envio y el armado del PDF van aparte.
 
 Por que GitHub Actions y no `schedule` + thread dentro de la app
 ---------------------------------------------------------------
 Streamlit Community Cloud duerme la app cuando nadie la visita y mata el
 proceso. Un scheduler en un thread de la app se muere con ella y no se despierta
-solo, asi que los lunes sin visitas el mail no saldria. El cron de Actions
+solo, asi que los viernes sin visitas el mail no saldria. El cron de Actions
 corre en la infraestructura de GitHub, no depende de que la app este viva.
 
 Zona horaria
 ------------
 Argentina usa UTC-3 todo el año (no mueve los relojes desde 2009), asi que
-8:00 ART son 11:00 UTC de forma estable. Igual el periodo se calcula con
+18:00 ART son 21:00 UTC de forma estable. Igual el periodo se calcula con
 zoneinfo y no con offsets a mano.
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from config.settings import URL_APP
+from config.settings import REPORTE_AMBOS_VIERNES, URL_APP
 from utils.comisiones import kpis_comisiones, top_clientes
 
 TZ_ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -50,26 +50,60 @@ def ahora_argentina() -> datetime:
     return datetime.now(TZ_ARGENTINA)
 
 
-def semana_cerrada(hoy: date | datetime | None = None) -> tuple[date, date]:
-    """(lunes, domingo) de la ultima semana COMPLETA antes de `hoy`.
+VIERNES = 4  # date.weekday(): lunes=0 … viernes=4
 
-    El mail sale los lunes temprano, asi que la semana que se reporta es la que
-    acaba de cerrar: el envio del lunes 21/09 trae del 14/09 al 20/09. Reportar
-    lunes-a-hoy daria una semana incompleta y los numeros no serian comparables
-    entre envios.
+
+def viernes_de_cierre(referencia: date | datetime | None = None) -> date:
+    """El viernes mas reciente hasta `referencia` inclusive.
+
+    Si el cron se atrasa y el job corre un sabado, el cierre sigue siendo el
+    viernes: el reporte no cambia de periodo porque GitHub demoro la corrida.
     """
-    if hoy is None:
-        hoy = ahora_argentina()
-    if isinstance(hoy, datetime):
-        hoy = hoy.date()
-    lunes_de_esta_semana = hoy - timedelta(days=hoy.weekday())
-    lunes = lunes_de_esta_semana - timedelta(days=7)
-    return lunes, lunes + timedelta(days=6)
+    if referencia is None:
+        referencia = ahora_argentina()
+    if isinstance(referencia, datetime):
+        referencia = referencia.date()
+    return referencia - timedelta(days=(referencia.weekday() - VIERNES) % 7)
+
+
+def semana_reporte(referencia: date | datetime | None = None,
+                   ambos_inclusive: bool | None = None) -> tuple[date, date]:
+    """(desde, hasta) del reporte semanal: de viernes a viernes.
+
+    Es la UNICA fuente del periodo: la usan la app, el PDF y el mail, asi que los
+    tres dicen siempre lo mismo.
+
+    El envio del viernes 25/09/2026 cubre del 18/09 al 25/09, ambos inclusive.
+    Con `ambos_inclusive=False` arranca el sabado 19/09 y no se superpone con el
+    reporte siguiente. El default sale de REPORTE_AMBOS_VIERNES en los secrets.
+
+    Sin `referencia` se toma la fecha de Argentina, nunca la UTC del runner: a
+    las 21:00 UTC del viernes en Buenos Aires siguen siendo las 18:00 del mismo
+    viernes, pero un cron que corra mas tarde ya estaria en sabado UTC.
+    """
+    if ambos_inclusive is None:
+        ambos_inclusive = REPORTE_AMBOS_VIERNES
+    hasta = viernes_de_cierre(referencia)
+    return hasta - timedelta(days=7 if ambos_inclusive else 6), hasta
+
+
+def semana_cerrada(referencia: date | datetime | None = None) -> tuple[date, date]:
+    """Alias historico de semana_reporte(). Se mantiene por compatibilidad."""
+    return semana_reporte(referencia)
+
+
+DIAS = ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo")
 
 
 def etiqueta_periodo(desde: date, hasta: date) -> str:
-    """'Lunes 08/09 - Domingo 14/09' para el asunto del mail."""
-    return f"Lunes {desde:%d/%m} - Domingo {hasta:%d/%m}"
+    """'Viernes 18/09 a Viernes 25/09/2026'. El año va una sola vez, al final."""
+    return (f"{DIAS[desde.weekday()]} {desde:%d/%m} a "
+            f"{DIAS[hasta.weekday()]} {hasta:%d/%m/%Y}")
+
+
+def titulo_reporte(desde: date, hasta: date) -> str:
+    """Encabezado del mail y del PDF."""
+    return f"REPORTE SEMANAL — {etiqueta_periodo(desde, hasta)}"
 
 
 def asunto(desde: date, hasta: date) -> str:
@@ -192,7 +226,7 @@ def cuerpo_html(k: dict, desde: date, hasta: date, clientes: pd.DataFrame | None
     return f"""\
 <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1B2631;max-width:640px">
   <h2 style="color:#2E7D32;margin:0 0 4px 0">🌱 Reporte Semanal Agropix</h2>
-  <p style="margin:0 0 16px 0;color:#5D6D7E">{etiqueta_periodo(desde, hasta)}</p>
+  <p style="margin:0 0 16px 0;color:#5D6D7E;font-weight:600">{titulo_reporte(desde, hasta)}</p>
 
   <p>Hola, va el resumen de la semana.</p>
 

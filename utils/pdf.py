@@ -105,6 +105,20 @@ def describir_periodo(filtros: dict) -> str:
     return f"{_fecha(desde)} a {_fecha(hasta)}"
 
 
+def titulo_pdf(filtros: dict) -> str:
+    """Mismo encabezado que el mail cuando el periodo es el semanal.
+
+    Asi el PDF adjunto y el cuerpo del mail dicen literalmente lo mismo, que es
+    lo primero que mira quien compara los dos.
+    """
+    from utils.reporte_semanal import titulo_reporte
+
+    desde, hasta = filtros.get("desde"), filtros.get("hasta")
+    if desde is None or hasta is None:
+        return "Agropix — Reporte de todo el historial"
+    return f"Agropix — {titulo_reporte(desde, hasta)}"
+
+
 def describir_estados(filtros: dict) -> str:
     estados, opciones = filtros.get("estados_trabajo"), filtros.get("estados_opciones") or []
     if estados is None:
@@ -709,7 +723,7 @@ def generar_pdf(datos: dict, filtros: dict | None = None) -> bytes:
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=A4, leftMargin=MARGEN, rightMargin=MARGEN, topMargin=1.0 * cm, bottomMargin=1.5 * cm,
-        title=f"Agropix — Reporte {describir_periodo(filtros)}", author="Agropix", subject="Reporte del dashboard",
+        title=titulo_pdf(filtros), author="Agropix", subject="Reporte del dashboard",
     )
     doc.build(historia, canvasmaker=_canvas_numerado(generado))
     return buffer.getvalue()

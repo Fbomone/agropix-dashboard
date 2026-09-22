@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Genera y envia el reporte semanal de Agropix. Corre fuera de Streamlit.
 
-Lo dispara .github/workflows/reporte-semanal.yml los lunes 8:00 ART. Tambien
+Lo dispara .github/workflows/reporte-semanal.yml los viernes 18:00 ART. Tambien
 se puede correr a mano:
 
     # Sin enviar nada: imprime los numeros y guarda el PDF en ./salida/
@@ -38,7 +38,7 @@ from utils import envio_log  # noqa: E402
 from utils.email_sender import configurado, enviar_individual  # noqa: E402
 from utils.reporte_semanal import (  # noqa: E402
     DESTINATARIOS, asunto, cuerpo_html, etiqueta_periodo, kpis_semana, nombre_pdf,
-    semana_cerrada, top_clientes_semana,
+    semana_reporte, top_clientes_semana,
 )
 
 log = logging.getLogger("agropix.reporte")
@@ -78,7 +78,7 @@ def main(argv=None) -> int:
     if bool(args.desde) != bool(args.hasta):
         log.error("--desde y --hasta van juntos o no van.")
         return 2
-    desde, hasta = (args.desde, args.hasta) if args.desde else semana_cerrada()
+    desde, hasta = (args.desde, args.hasta) if args.desde else semana_reporte()
     if desde > hasta:
         log.error("--desde (%s) es posterior a --hasta (%s).", desde, hasta)
         return 2
