@@ -1,0 +1,45 @@
+name: 3 · Reporte semanal — todos (PRODUCTIVO)
+
+# El envio real, a los 6 destinatarios. Viernes 18:00 ART = 21:00 UTC.
+# Argentina usa UTC-3 todo el año (no mueve los relojes desde 2009), asi que el
+# horario no se corre en verano.
+#
+# El periodo va de viernes a viernes, ambos inclusive: el envio del viernes
+# 25/09 cubre del 18/09 al 25/09. Lo calcula semana_reporte() en hora de
+# Argentina, no con la UTC del runner.
+#
+# OJO con el cron de GitHub:
+#  - Puede demorarse entre 5 y 30 minutos en horarios de carga, y en casos
+#    extremos saltear una corrida. Si el reporte llega 18:25, es normal. Por eso
+#    el periodo se calcula sobre el viernes mas reciente: aunque el job corra el
+#    sabado, sigue reportando la misma semana.
+#  - En repos PUBLICOS, GitHub deshabilita los workflows programados tras 60
+#    dias sin commits. Este repo es privado, asi que hoy no aplica.
+on:
+  schedule:
+    - cron: "0 21 * * 5"
+  workflow_dispatch:
+    inputs:
+      fecha_corte:
+        description: "Viernes de cierre a simular (YYYY-MM-DD). Vacío = el viernes más reciente"
+        type: string
+      dry_run:
+        description: "Generar sin enviar (deja el PDF como artifact)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: reporte-semanal
+  cancel-in-progress: false
+
+jobs:
+  enviar:
+    uses: ./.github/workflows/_enviar_reporte.yml
+    secrets: inherit
+    with:
+      modo: semanal
+      fecha_corte: ${{ inputs.fecha_corte }}
+      dry_run: ${{ inputs.dry_run }}
+      # Si lo dispara el cron queda como AUTOMATICO en el historial; si lo
+      # corre alguien a mano, como MANUAL
+      tipo_historial: ${{ github.event_name == 'schedule' && 'AUTOMATICO' || 'MANUAL' }}

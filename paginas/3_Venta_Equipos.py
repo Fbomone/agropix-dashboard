@@ -11,7 +11,7 @@ from utils.format import (
     formatear_moneda_card, formatear_moneda_completa, formatear_numero,
 )
 from utils.ui import (
-    columna_moneda, espacio_para_etiquetas, grafico, hay_datos, tarjetas_kpi,
+    aviso_sin_datos, columna_moneda, espacio_para_etiquetas, grafico, hay_datos, tarjetas_kpi,
 )
 
 COLOR = COLORES_UNIDAD[EQUIPOS]
@@ -40,6 +40,9 @@ tarjetas_kpi([
 ], columnas=5)
 
 v = vigentes(ops)
+
+if aviso_sin_datos(ops, que="ventas de equipos"):
+    st.stop()
 
 if k["ops_pendientes"]:
     st.warning(

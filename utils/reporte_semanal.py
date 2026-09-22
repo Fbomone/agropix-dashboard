@@ -1,20 +1,20 @@
 """Reporte semanal de Agropix: periodo, KPIs y cuerpo del mail.
 
 Se ejecuta fuera de Streamlit, desde scripts/enviar_reporte_semanal.py, que a su
-vez corre en GitHub Actions los lunes 8:00 ART. Aca va solo la logica pura
+vez corre en GitHub Actions los viernes 18:00 ART. Aca va solo la logica pura
 (que semana, que numeros, que texto); el envio y el armado del PDF van aparte.
 
 Por que GitHub Actions y no `schedule` + thread dentro de la app
 ---------------------------------------------------------------
 Streamlit Community Cloud duerme la app cuando nadie la visita y mata el
 proceso. Un scheduler en un thread de la app se muere con ella y no se despierta
-solo, asi que los lunes sin visitas el mail no saldria. El cron de Actions
+solo, asi que los viernes sin visitas el mail no saldria. El cron de Actions
 corre en la infraestructura de GitHub, no depende de que la app este viva.
 
 Zona horaria
 ------------
 Argentina usa UTC-3 todo el año (no mueve los relojes desde 2009), asi que
-8:00 ART son 11:00 UTC de forma estable. Igual el periodo se calcula con
+18:00 ART son 21:00 UTC de forma estable. Igual el periodo se calcula con
 zoneinfo y no con offsets a mano.
 """
 from __future__ import annotations
@@ -24,15 +24,15 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from config.settings import URL_APP
+from config.settings import REPORTE_AMBOS_VIERNES, URL_APP
 from utils.comisiones import kpis_comisiones, top_clientes
 
 TZ_ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
 
-# Destinatarios del reporte semanal. Se pueden sobreescribir desde los secrets
-# con EMAIL_DESTINATARIOS (lista separada por comas).
-# infoagropix@ salio de la lista: sigue teniendo acceso a la app, pero no
-# recibe el mail.
+# ---------------------------------------------------------------------------
+# Destinatarios: UNA sola fuente, compartida por el mail, el CLI y la pestania
+# Administracion de la app. Cambiar la lista aca la cambia en los tres lados.
+# ---------------------------------------------------------------------------
 DESTINATARIOS = (
     "francobomone14@gmail.com",     # Franco
     "matias21tossen@gmail.com",     # Matias
@@ -42,6 +42,68 @@ DESTINATARIOS = (
     "fabiocailletbois@gmail.com",   # Fabio
 )
 
+# Tres circulos concentricos, de menor a mayor alcance. La idea es probar
+# siempre en el mas chico antes de pasar al siguiente.
+DESTINATARIOS_DESARROLLO = (
+    "francobomone14@gmail.com",     # Franco y nadie mas: para probar cualquier cosa
+)
+
+DESTINATARIOS_PRUEBA = (
+    "francobomone14@gmail.com",     # Franco
+    "matias21tossen@gmail.com",     # Matias
+)
+
+# A quien avisarle si el envio automatico falla. Solo Franco: es quien puede
+# arreglarlo, y un mail de error al equipo entero no le sirve a nadie.
+AVISO_DE_ERROR = "francobomone14@gmail.com"
+
+# Filtro explicito, no por omision. La direccion salio de la lista, pero si
+# alguien la vuelve a agregar —o llega por EMAIL_DESTINATARIOS en los secrets—
+# igual queda afuera del reporte. Conserva el acceso a la app.
+EXCLUIDOS = ("infoagropix",)
+
+MODO_DESARROLLO, MODO_PRUEBA, MODO_SEMANAL = "desarrollo", "prueba", "semanal"
+MODOS = (MODO_DESARROLLO, MODO_PRUEBA, MODO_SEMANAL)
+
+# Quien recibe en cada modo. El semanal es el unico que puede tomar la lista de
+# los secrets; los otros dos la tienen fija en el codigo a proposito, asi un
+# secret mal cargado no convierte una prueba en un envio a todo el equipo.
+POR_MODO = {
+    MODO_DESARROLLO: DESTINATARIOS_DESARROLLO,
+    MODO_PRUEBA: DESTINATARIOS_PRUEBA,
+    MODO_SEMANAL: DESTINATARIOS,
+}
+
+
+def excluido(email: str) -> bool:
+    """True si la direccion contiene alguno de los fragmentos vetados."""
+    limpio = (email or "").strip().lower()
+    return any(fragmento in limpio for fragmento in EXCLUIDOS)
+
+
+def destinatarios(modo: str = MODO_SEMANAL, lista: list[str] | None = None) -> list[str]:
+    """A quien le llega el reporte, ya filtrado, normalizado y sin repetidos.
+
+    desarrollo -> solo Franco. prueba -> Franco y Matias. semanal -> la lista
+    completa. `lista` permite pasar destinatarios a mano (desde los secrets o
+    desde --destinatarios); el filtro de EXCLUIDOS se aplica igual.
+    """
+    base = list(lista) if lista else list(POR_MODO.get(modo, DESTINATARIOS))
+
+    vistos, salida = set(), []
+    for email in base:
+        limpio = (email or "").strip().lower()
+        if not limpio or limpio in vistos or excluido(limpio):
+            continue
+        vistos.add(limpio)
+        salida.append(limpio)
+    return salida
+
+
+def prefijo_asunto(modo: str) -> str:
+    """El asunto dice de entrada si es un envio real o una prueba."""
+    return {MODO_DESARROLLO: "[DEV] ", MODO_PRUEBA: "[PRUEBA] "}.get(modo, "")
+
 
 # ---------------------------------------------------------------------------
 # Periodo
@@ -50,30 +112,65 @@ def ahora_argentina() -> datetime:
     return datetime.now(TZ_ARGENTINA)
 
 
-def semana_cerrada(hoy: date | datetime | None = None) -> tuple[date, date]:
-    """(lunes, domingo) de la ultima semana COMPLETA antes de `hoy`.
+VIERNES = 4  # date.weekday(): lunes=0 … viernes=4
 
-    El mail sale los lunes temprano, asi que la semana que se reporta es la que
-    acaba de cerrar: el envio del lunes 21/09 trae del 14/09 al 20/09. Reportar
-    lunes-a-hoy daria una semana incompleta y los numeros no serian comparables
-    entre envios.
+
+def viernes_de_cierre(referencia: date | datetime | None = None) -> date:
+    """El viernes mas reciente hasta `referencia` inclusive.
+
+    Si el cron se atrasa y el job corre un sabado, el cierre sigue siendo el
+    viernes: el reporte no cambia de periodo porque GitHub demoro la corrida.
     """
-    if hoy is None:
-        hoy = ahora_argentina()
-    if isinstance(hoy, datetime):
-        hoy = hoy.date()
-    lunes_de_esta_semana = hoy - timedelta(days=hoy.weekday())
-    lunes = lunes_de_esta_semana - timedelta(days=7)
-    return lunes, lunes + timedelta(days=6)
+    if referencia is None:
+        referencia = ahora_argentina()
+    if isinstance(referencia, datetime):
+        referencia = referencia.date()
+    return referencia - timedelta(days=(referencia.weekday() - VIERNES) % 7)
+
+
+def semana_reporte(referencia: date | datetime | None = None,
+                   ambos_inclusive: bool | None = None) -> tuple[date, date]:
+    """(desde, hasta) del reporte semanal: de viernes a viernes.
+
+    Es la UNICA fuente del periodo: la usan la app, el PDF y el mail, asi que los
+    tres dicen siempre lo mismo.
+
+    El envio del viernes 25/09/2026 cubre del 18/09 al 25/09, ambos inclusive.
+    Con `ambos_inclusive=False` arranca el sabado 19/09 y no se superpone con el
+    reporte siguiente. El default sale de REPORTE_AMBOS_VIERNES en los secrets.
+
+    Sin `referencia` se toma la fecha de Argentina, nunca la UTC del runner: a
+    las 21:00 UTC del viernes en Buenos Aires siguen siendo las 18:00 del mismo
+    viernes, pero un cron que corra mas tarde ya estaria en sabado UTC.
+    """
+    if ambos_inclusive is None:
+        ambos_inclusive = REPORTE_AMBOS_VIERNES
+    hasta = viernes_de_cierre(referencia)
+    return hasta - timedelta(days=7 if ambos_inclusive else 6), hasta
+
+
+def semana_cerrada(referencia: date | datetime | None = None) -> tuple[date, date]:
+    """Alias historico de semana_reporte(). Se mantiene por compatibilidad."""
+    return semana_reporte(referencia)
+
+
+DIAS = ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo")
 
 
 def etiqueta_periodo(desde: date, hasta: date) -> str:
-    """'Lunes 08/09 - Domingo 14/09' para el asunto del mail."""
-    return f"Lunes {desde:%d/%m} - Domingo {hasta:%d/%m}"
+    """'Viernes 18/09 a Viernes 25/09/2026'. El año va una sola vez, al final."""
+    return (f"{DIAS[desde.weekday()]} {desde:%d/%m} a "
+            f"{DIAS[hasta.weekday()]} {hasta:%d/%m/%Y}")
 
 
-def asunto(desde: date, hasta: date) -> str:
-    return f"Reporte Semanal Agropix - [{etiqueta_periodo(desde, hasta)}]"
+def titulo_reporte(desde: date, hasta: date) -> str:
+    """Encabezado del mail y del PDF."""
+    return f"REPORTE SEMANAL — {etiqueta_periodo(desde, hasta)}"
+
+
+def asunto(desde: date, hasta: date, modo: str = MODO_SEMANAL) -> str:
+    return (f"{prefijo_asunto(modo)}Reporte Semanal Agropix - "
+            f"[{etiqueta_periodo(desde, hasta)}]")
 
 
 def nombre_pdf(hasta: date) -> str:
@@ -124,10 +221,15 @@ def resumen_texto(k: dict, desde: date, hasta: date) -> str:
         partes.append(
             f"Se trabajaron {_numero(k['hectareas'])} ha en {k['cantidad_servicios']} trabajos."
         )
-    if k["cantidad_servicios"] == 0 and k.get("total_negocio", k["comision_generada"]) == 0:
-        return (f"Entre el {desde:%d/%m} y el {hasta:%d/%m} no se registraron "
-                "trabajos ni ventas de equipos en las planillas.")
+    if sin_actividad(k):
+        return "Sin actividad registrada en el período."
     return " ".join(partes)
+
+
+def sin_actividad(k: dict) -> bool:
+    """Ni trabajos ni ventas de equipos en el periodo."""
+    return (k["cantidad_servicios"] == 0
+            and k.get("total_negocio", k["comision_generada"]) == 0)
 
 
 # ---------------------------------------------------------------------------
@@ -192,13 +294,15 @@ def cuerpo_html(k: dict, desde: date, hasta: date, clientes: pd.DataFrame | None
     return f"""\
 <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1B2631;max-width:640px">
   <h2 style="color:#2E7D32;margin:0 0 4px 0">🌱 Reporte Semanal Agropix</h2>
-  <p style="margin:0 0 16px 0;color:#5D6D7E">{etiqueta_periodo(desde, hasta)}</p>
+  <p style="margin:0 0 16px 0;color:#5D6D7E;font-weight:600">{titulo_reporte(desde, hasta)}</p>
 
   <p>Hola, va el resumen de la semana.</p>
 
   <table width="100%" cellpadding="0" cellspacing="0" style="margin:12px 0"><tr>{tarjetas}</tr></table>
 
   <p style="line-height:1.55">{resumen_texto(k, desde, hasta)}</p>
+
+  {_desglose(k)}
 
   {_tabla_clientes(clientes)}
 
@@ -222,6 +326,43 @@ def cuerpo_html(k: dict, desde: date, hasta: date, clientes: pd.DataFrame | None
   </p>
 </div>
 """
+
+
+_FILA_DESGLOSE = """
+    <tr style="background:{fondo}">
+      <td style="padding:7px 10px;border-bottom:1px solid #E5E9EC">{concepto}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #E5E9EC;text-align:right">{valor}</td>
+    </tr>"""
+
+
+def _desglose(k: dict) -> str:
+    """Las cifras que el equipo mira al abrir el mail, sin tener que ir al PDF."""
+    if sin_actividad(k):
+        return ""
+    filas = [
+        ("Ingresos del período", _moneda(k.get("total_negocio", k["comision_generada"]))),
+        ("Comisiones cobradas", _moneda(k["comision_cobrada"])),
+        ("Comisiones por cobrar", _moneda(k["por_cobrar"])),
+        ("Venta de servicios", _moneda(k["generado_servicios"])),
+        ("Venta de equipos (comisión)", _moneda(k["generada_equipos"])),
+        ("Hectáreas trabajadas", f"{_numero(k['hectareas'])} ha"),
+        ("Clientes", _numero(k["clientes"])),
+    ]
+    cuerpo = "".join(
+        _FILA_DESGLOSE.format(fondo="#FFFFFF" if i % 2 else "#FAFBFC",
+                              concepto=concepto, valor=valor)
+        for i, (concepto, valor) in enumerate(filas)
+    )
+    return f"""
+  <h3 style="font-size:15px;margin:22px 0 8px 0">Resumen del período</h3>
+  <table width="100%" cellpadding="0" cellspacing="0"
+         style="border-collapse:collapse;font-size:13px">
+    <tr style="background:#2E7D32;color:#FFFFFF">
+      <th style="padding:8px 10px;text-align:left">Concepto</th>
+      <th style="padding:8px 10px;text-align:right">Valor</th>
+    </tr>
+    {cuerpo}
+  </table>"""
 
 
 def _tabla_clientes(clientes: pd.DataFrame | None) -> str:

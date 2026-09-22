@@ -1,6 +1,7 @@
 import streamlit as st
 
 from utils.auth import check_authentication, logout_button, sesion_es_admin
+from utils.contrato import verificar as verificar_contrato
 from utils.data import (
     ESTADOS_TRABAJO_EJECUTADO, aplicar_filtros, cantidad_alertas, cargar_crudos, cargar_precios,
     construir_datos, opciones_estado_trabajo, rango_fechas,
@@ -15,6 +16,10 @@ aplicar_tema()
 # Tiene que ir antes de cargar_crudos() para que los datos del cliente no se lean
 # (ni queden cacheados) en una sesion anonima.
 usuario = check_authentication()
+
+# Red de seguridad de despliegue: si Streamlit Cloud quedo con modulos viejos
+# en memoria, avisa que hay que reiniciar en vez de reventar con un KeyError
+verificar_contrato(st)
 
 # Evita que st.metric corte los valores con "…" en columnas angostas
 st.html("""

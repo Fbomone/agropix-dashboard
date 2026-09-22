@@ -1,5 +1,5 @@
 """Tests del reporte semanal: periodo, KPIs, cuerpo del mail y el script de envio."""
-from datetime import date, datetime
+from datetime import date
 
 import pandas as pd
 import pytest
@@ -15,40 +15,14 @@ def datos(sv=None, eq=None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Periodo
+# Periodo: la logica vive en tests/test_periodo_semanal.py. Aca solo se fija que
+# el resto del modulo use el periodo de viernes a viernes.
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("hoy,lunes,domingo", [
-    # Viernes 18/09/2026 -> se reporta lunes 7 a domingo 13
-    (date(2026, 9, 18), date(2026, 9, 7), date(2026, 9, 13)),
-    (date(2026, 9, 14), date(2026, 9, 7), date(2026, 9, 13)),   # lunes
-    (date(2026, 9, 20), date(2026, 9, 7), date(2026, 9, 13)),   # domingo
-    (date(2026, 1, 2), date(2025, 12, 22), date(2025, 12, 28)),  # cruza el año
-])
-def test_semana_cerrada_es_siempre_la_anterior_completa(hoy, lunes, domingo):
-    assert rs.semana_cerrada(hoy) == (lunes, domingo)
-
-
-def test_la_semana_reportada_no_incluye_el_dia_del_envio():
-    """Reportar lunes-a-hoy daria semanas incompletas y no comparables."""
-    viernes = date(2026, 9, 18)
-    _, hasta = rs.semana_cerrada(viernes)
-    assert hasta < viernes
-
-
-def test_semana_cerrada_dura_siete_dias():
-    desde, hasta = rs.semana_cerrada(date(2026, 9, 18))
-    assert (hasta - desde).days == 6
-    assert desde.weekday() == 0 and hasta.weekday() == 6
-
-
-def test_semana_cerrada_acepta_datetime():
-    assert rs.semana_cerrada(datetime(2026, 9, 18, 9, 30)) == (date(2026, 9, 7), date(2026, 9, 13))
-
-
-def test_asunto_y_nombre_de_archivo():
-    desde, hasta = date(2026, 9, 7), date(2026, 9, 13)
-    assert rs.asunto(desde, hasta) == "Reporte Semanal Agropix - [Lunes 07/09 - Domingo 13/09]"
-    assert rs.nombre_pdf(hasta) == "reporte_semanal_20260913.pdf"
+def test_el_asunto_y_el_archivo_usan_el_periodo_de_viernes():
+    desde, hasta = rs.semana_reporte(date(2026, 9, 25))
+    assert rs.asunto(desde, hasta) == (
+        "Reporte Semanal Agropix - [Viernes 18/09 a Viernes 25/09/2026]")
+    assert rs.nombre_pdf(hasta) == "reporte_semanal_20260925.pdf"
 
 
 def test_la_hora_se_calcula_en_zona_argentina():
@@ -143,8 +117,8 @@ def test_el_resumen_habla_de_lo_cobrado_y_no_de_lo_generado():
 
 
 def test_resumen_de_una_semana_sin_movimiento_lo_dice():
-    texto = rs.resumen_texto(rs.kpis_semana(datos()), date(2026, 9, 7), date(2026, 9, 13))
-    assert "no se registraron" in texto
+    texto = rs.resumen_texto(rs.kpis_semana(datos()), date(2026, 9, 18), date(2026, 9, 25))
+    assert texto == "Sin actividad registrada en el período."
 
 
 def test_cuerpo_html_trae_los_tres_kpis_y_el_boton():
@@ -152,13 +126,13 @@ def test_cuerpo_html_trae_los_tres_kpis_y_el_boton():
         sv=servicios([{"monto": 3000.0, "hectareas": 120.0, "estado_cobro": COBRADO}]),
         eq=ops([{"comision": 1000.0, "cobrado": True}]),
     ))
-    html = rs.cuerpo_html(k, date(2026, 9, 7), date(2026, 9, 13))
+    html = rs.cuerpo_html(k, date(2026, 9, 18), date(2026, 9, 25))
     assert "Total del negocio" in html
     assert "Has trabajadas" in html
     assert "Clientes" in html
     assert "Ver reporte completo en Streamlit" in html
     assert rs.URL_APP in html
-    assert "Lunes 07/09 - Domingo 13/09" in html
+    assert "Viernes 18/09 a Viernes 25/09/2026" in html
     assert "Hola, va el resumen de la semana." in html
 
 
@@ -296,11 +270,11 @@ def test_el_envio_queda_registrado_en_el_historial(monkeypatch, tmp_path):
     script = _script_con_envio(monkeypatch, completo, tmp_path)
     monkeypatch.setattr(envio_log, "ARCHIVO", archivo)
 
-    script.main(["--desde", "2026-09-07", "--hasta", "2026-09-13", "--tipo", "AUTOMATICO"])
+    script.main(["--desde", "2026-09-18", "--hasta", "2026-09-25", "--tipo", "AUTOMATICO"])
     entradas = envio_log.historial(archivo=archivo)
     assert len(entradas) == 1
     assert entradas[0]["tipo"] == "AUTOMATICO"
-    assert entradas[0]["periodo"] == "Lunes 07/09 - Domingo 13/09"
+    assert entradas[0]["periodo"] == "Viernes 18/09 a Viernes 25/09/2026"
 
 
 def test_en_github_actions_el_envio_se_marca_automatico(monkeypatch, tmp_path):
@@ -346,17 +320,11 @@ def test_el_link_va_en_el_boton_y_tambien_en_texto_copiable():
     assert f">{rs.URL_APP}</a>" in html, "el link tiene que verse escrito, no sólo como destino"
 
 
-def test_el_horario_del_cron_es_lunes_8am_argentina():
-    """0 11 * * 1 = lunes 11:00 UTC = 8:00 ART (Argentina es UTC-3 todo el año)."""
-    from pathlib import Path
-
-    workflow = (Path(rs.__file__).resolve().parent.parent
-                / ".github" / "workflows" / "reporte-semanal.yml").read_text(encoding="utf-8")
-    assert 'cron: "0 11 * * 1"' in workflow
-
-
-def test_el_mail_del_lunes_21_reporta_del_14_al_20():
+# El horario del cron se verifica en tests/test_workflows.py, que es el archivo
+# dedicado a los YAML. Se cambia a viernes en la etapa A4.
+def test_el_mail_del_viernes_25_reporta_del_18_al_25():
     """El caso exacto que pidió Franco."""
-    desde, hasta = rs.semana_cerrada(date(2026, 9, 21))
-    assert (desde, hasta) == (date(2026, 9, 14), date(2026, 9, 20))
-    assert rs.asunto(desde, hasta) == "Reporte Semanal Agropix - [Lunes 14/09 - Domingo 20/09]"
+    desde, hasta = rs.semana_reporte(date(2026, 9, 25))
+    assert (desde, hasta) == (date(2026, 9, 18), date(2026, 9, 25))
+    assert rs.titulo_reporte(desde, hasta) == (
+        "REPORTE SEMANAL — Viernes 18/09 a Viernes 25/09/2026")

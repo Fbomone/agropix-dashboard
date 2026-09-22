@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Genera y envia el reporte semanal de Agropix. Corre fuera de Streamlit.
 
-Lo dispara .github/workflows/reporte-semanal.yml los lunes 8:00 ART. Tambien
+Lo dispara .github/workflows/reporte-semanal.yml los viernes 18:00 ART. Tambien
 se puede correr a mano:
 
     # Sin enviar nada: imprime los numeros y guarda el PDF en ./salida/
@@ -37,8 +37,8 @@ from utils.data import aplicar_filtros, cargar_precios, construir_datos  # noqa:
 from utils import envio_log  # noqa: E402
 from utils.email_sender import configurado, enviar_individual  # noqa: E402
 from utils.reporte_semanal import (  # noqa: E402
-    DESTINATARIOS, asunto, cuerpo_html, etiqueta_periodo, kpis_semana, nombre_pdf,
-    semana_cerrada, top_clientes_semana,
+    AVISO_DE_ERROR, MODOS, MODO_SEMANAL, TZ_ARGENTINA, asunto, cuerpo_html, destinatarios,
+    etiqueta_periodo, kpis_semana, nombre_pdf, semana_reporte, top_clientes_semana,
 )
 
 log = logging.getLogger("agropix.reporte")
@@ -46,6 +46,12 @@ log = logging.getLogger("agropix.reporte")
 
 def argumentos(argv=None):
     p = argparse.ArgumentParser(description="Reporte semanal de Agropix por mail")
+    p.add_argument("--modo", choices=list(MODOS), default=MODO_SEMANAL,
+                   help="desarrollo: solo Franco, asunto [DEV]. prueba: Franco y Matías, "
+                        "asunto [PRUEBA]. semanal: toda la lista, sin prefijo")
+    p.add_argument("--fecha-corte", type=_fecha, dest="fecha_corte",
+                   help="viernes de cierre a simular (YYYY-MM-DD). Si no es viernes se "
+                        "toma el viernes anterior más cercano")
     p.add_argument("--desde", type=_fecha, help="inicio del período (YYYY-MM-DD)")
     p.add_argument("--hasta", type=_fecha, help="fin del período (YYYY-MM-DD)")
     p.add_argument("--destinatarios", help="lista separada por comas; reemplaza la de por defecto")
@@ -53,6 +59,8 @@ def argumentos(argv=None):
     p.add_argument("--tipo", choices=[envio_log.AUTOMATICO, envio_log.MANUAL, envio_log.PRUEBA],
                    help="cómo queda registrado en el historial; por defecto se deduce del entorno")
     p.add_argument("--salida", default="salida", help="carpeta donde guardar el PDF en dry-run")
+    p.add_argument("--notificar-error", dest="notificar_error", metavar="URL_DE_LA_CORRIDA",
+                   help="no genera reporte: avisa a Franco que el envío automático falló")
     return p.parse_args(argv)
 
 
@@ -75,13 +83,22 @@ def main(argv=None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     args = argumentos(argv)
 
+    if args.notificar_error:
+        return _avisar_error(args.notificar_error)
+
     if bool(args.desde) != bool(args.hasta):
         log.error("--desde y --hasta van juntos o no van.")
         return 2
-    desde, hasta = (args.desde, args.hasta) if args.desde else semana_cerrada()
+    # --desde/--hasta mandan; si no, el periodo sale de semana_reporte() sobre la
+    # fecha de corte (o sobre hoy en Argentina)
+    if args.desde:
+        desde, hasta = args.desde, args.hasta
+    else:
+        desde, hasta = semana_reporte(args.fecha_corte)
     if desde > hasta:
         log.error("--desde (%s) es posterior a --hasta (%s).", desde, hasta)
         return 2
+    log.info("Modo: %s", args.modo)
     log.info("Período: %s (%s a %s)", etiqueta_periodo(desde, hasta), desde, hasta)
 
     # Se avisa temprano si falta configuracion, antes de leer Sheets y armar el PDF
@@ -121,7 +138,10 @@ def main(argv=None) -> int:
         return 5
     log.info("PDF: %s bytes", f"{len(pdf):,}")
 
-    destino = _destinatarios(args.destinatarios)
+    destino = _destinatarios(args.destinatarios, args.modo)
+    if not destino:
+        log.error('No quedó ningún destinatario después de aplicar el filtro.')
+        return 7
     # GITHUB_ACTIONS lo define el runner: distingue el envio del cron de una
     # corrida a mano sin que haya que acordarse de pasar --tipo
     tipo = args.tipo or (envio_log.AUTOMATICO if os.getenv("GITHUB_ACTIONS")
@@ -140,7 +160,8 @@ def main(argv=None) -> int:
 
     # enviar_individual manda uno por uno: si alguno falla, se sabe cual. Un envio
     # con varios "to" falla para todos o para ninguno.
-    resultado = enviar_individual(pdf, archivo, destino, asunto=asunto(desde, hasta),
+    resultado = enviar_individual(pdf, archivo, destino,
+                                  asunto=asunto(desde, hasta, args.modo),
                                   html=html, periodo=etiqueta_periodo(desde, hasta))
     envio_log.registrar(resultado, tipo=tipo, periodo=etiqueta_periodo(desde, hasta),
                         usuario="scripts/enviar_reporte_semanal.py")
@@ -160,12 +181,59 @@ def main(argv=None) -> int:
     return 0
 
 
-def _destinatarios(crudo: str | None) -> list[str]:
-    if crudo:
-        return [d.strip() for d in crudo.split(",") if d.strip()]
+def _avisar_error(url_corrida: str) -> int:
+    """Le avisa SOLO a Franco que el envío automático falló.
+
+    Un mail de error al equipo entero no le sirve a nadie: el unico que puede
+    arreglarlo es quien tiene acceso a los secrets y a Actions.
+    """
+    from utils.email_sender import ErrorEnvioEmail, configurado, enviar_reporte
+
+    listo, motivo = configurado()
+    if not listo:
+        # Si lo que fallo fue justamente la configuracion del envio, no hay forma
+        # de avisar por mail. Queda el rojo del workflow.
+        log.error("No se puede avisar por mail: %s", motivo)
+        return 8
+
+    momento = datetime.now(TZ_ARGENTINA).strftime("%d/%m/%Y %H:%M")
+    html = f"""<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1B2631">
+  <h2 style="color:#C62828;margin:0 0 8px 0">⚠️ El reporte semanal no se envió</h2>
+  <p>La corrida automática del {momento} (hora Argentina) falló, así que
+     <strong>el equipo no recibió el reporte</strong>.</p>
+  <p>Revisá el log de la corrida:<br>
+     <a href="{url_corrida}" style="color:#1565C0;word-break:break-all">{url_corrida}</a></p>
+  <p style="color:#5D6D7E;font-size:12px">
+    Se puede reintentar a mano desde Actions → Reporte semanal Agropix → Run workflow.
+  </p>
+</div>"""
+    try:
+        enviar_reporte(b"%PDF-1.4 sin reporte", "sin-reporte.pdf",
+                       destinatarios=[AVISO_DE_ERROR],
+                       asunto="⚠️ Agropix — falló el envío del reporte semanal",
+                       html=html)
+    except ErrorEnvioEmail as e:
+        log.error("Tampoco se pudo avisar del error: %s", e)
+        return 8
+    log.info("Aviso de falla enviado a %s", AVISO_DE_ERROR)
+    return 0
+
+
+def _destinatarios(crudo: str | None, modo: str) -> list[str]:
+    """La lista final, siempre pasada por el filtro de destinatarios().
+
+    Ni --destinatarios ni EMAIL_DESTINATARIOS pueden saltearse la exclusion:
+    el filtro se aplica despues de elegir la fuente, no antes.
+    """
     from config.settings import EMAIL_DESTINATARIOS
 
-    return EMAIL_DESTINATARIOS or list(DESTINATARIOS)
+    if crudo:
+        lista = [d.strip() for d in crudo.split(",") if d.strip()]
+    elif modo == MODO_SEMANAL and EMAIL_DESTINATARIOS:
+        lista = EMAIL_DESTINATARIOS
+    else:
+        lista = None
+    return destinatarios(modo, lista)
 
 
 if __name__ == "__main__":

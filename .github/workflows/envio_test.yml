@@ -1,0 +1,48 @@
+name: 2 · Test — Franco y Matías
+
+# El circulo del medio: manda a Franco Y a Matias, con el asunto prefijado
+# [PRUEBA]. Es el paso previo al envio real: si el mail se ve bien para los dos,
+# ya se puede mandar a todo el equipo.
+#
+# ---------------------------------------------------------------------------
+# CRON TEMPORAL — QUITAR DESPUES DEL 2026-09-23
+# ---------------------------------------------------------------------------
+# El schedule de abajo es un ENSAYO de una sola vez: sirve para comprobar que
+# el envio sale solo, sin que nadie apriete nada, antes de confiarle el
+# productivo del viernes a las 18:00.
+#
+# Fija dia 23 y mes 9, no "todos los martes": si alguien se olvida de sacarlo,
+# lo peor que pasa es que vuelva a dispararse dentro de un año, no todas las
+# semanas. Un `cron: "0 1 * * 2"` en cambio le mandaria un reporte duplicado a
+# Matias cada martes para siempre.
+#
+# 0 1 23 9 * = 23/09 01:00 UTC = 22/09 22:00 en Argentina (UTC-3).
+#
+# Una vez que el ensayo salga bien, borrar el bloque `schedule:` entero. El
+# workflow vuelve a ser solo-manual, que es como tiene que quedar.
+on:
+  schedule:
+    - cron: "0 1 23 9 *"
+  workflow_dispatch:
+    inputs:
+      fecha_corte:
+        description: "Viernes de cierre a simular (YYYY-MM-DD). Vacío = el viernes más reciente"
+        type: string
+      dry_run:
+        description: "Generar sin enviar (deja el PDF como artifact)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: envio-test
+  cancel-in-progress: false
+
+jobs:
+  enviar:
+    uses: ./.github/workflows/_enviar_reporte.yml
+    secrets: inherit
+    with:
+      modo: prueba
+      fecha_corte: ${{ inputs.fecha_corte }}
+      dry_run: ${{ inputs.dry_run }}
+      tipo_historial: PRUEBA

@@ -8,8 +8,8 @@ from utils.format import (
     formatear_porcentaje,
 )
 from utils.ui import (
-    barras_por, columna_moneda, espacio_para_etiquetas, grafico, hay_datos, leyenda_estados,
-    metricas, tarjetas_kpi,
+    aviso_sin_datos, barras_por, columna_moneda, espacio_para_etiquetas, grafico, hay_datos,
+    leyenda_estados, metricas, tarjetas_kpi,
 )
 
 COLOR = COLORES_UNIDAD[SERVICIO]
@@ -36,6 +36,9 @@ tarjetas_kpi([
     dict(label="👥 Clientes", valor=formatear_numero(k["clientes"]),
          nota="Con al menos un trabajo en el período", gradiente="neutro"),
 ], columnas=4)
+
+if aviso_sin_datos(s, que="trabajos"):
+    st.stop()
 
 st.divider()
 g1, g2 = st.columns(2)

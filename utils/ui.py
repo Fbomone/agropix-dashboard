@@ -36,6 +36,27 @@ def leyenda_estados(estados, opciones) -> str:
     return "Estados del trabajo incluidos: " + ", ".join(estados) + "."
 
 
+def periodo_vacio(*dataframes) -> bool:
+    """True si ninguno de los DataFrames tiene filas."""
+    return all(df is None or len(df) == 0 for df in dataframes)
+
+
+def aviso_sin_datos(*dataframes, que: str = "movimiento") -> bool:
+    """Un unico aviso cuando el periodo no tiene nada, y True para cortar la pagina.
+
+    Sin esto cada grafico avisaba por su cuenta y una pagina vacia mostraba el
+    mismo mensaje trece veces, que es ruido y no informacion.
+    """
+    if not periodo_vacio(*dataframes):
+        return False
+    st.info(
+        f"**No hay {que} en el período elegido.** Probá ampliar el rango de fechas o "
+        "revisar el filtro *Estado del trabajo* en la barra lateral.",
+        icon="📭",
+    )
+    return True
+
+
 def hay_datos(df) -> bool:
     """False (con aviso) si no hay nada que mostrar: la seccion se saltea sin romper la pagina."""
     if df is None or len(df) == 0:

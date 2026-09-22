@@ -57,6 +57,15 @@ COHERE_API_KEY = _cfg("COHERE_API_KEY")
 # la URL larga que asigna Streamlit Cloud, que no depende del nombre corto.
 URL_APP = _cfg("URL_APP", "https://agropix-dashboard-rlugsmactrmmzqtonnbqw9.streamlit.app/")
 
+# Reporte semanal: si el viernes de apertura entra junto con el de cierre.
+# Con True (lo pedido) el periodo dura 8 dias y el viernes aparece en DOS
+# reportes seguidos: el del 25/09 cubre 18-25 y el del 02/10 cubre 25-02, asi que
+# lo cargado ese viernes se cuenta dos veces. Con False el periodo va de sabado a
+# viernes, 7 dias, sin superposicion. Se cambia desde los secrets sin tocar codigo.
+REPORTE_AMBOS_VIERNES = str(_cfg("REPORTE_AMBOS_VIERNES", "true")).strip().lower() not in {
+    "false", "0", "no"
+}
+
 # SendGrid (envio automatico de reportes). Se aceptan las dos formas de secrets:
 # claves planas (SENDGRID_API_KEY) o la tabla [sendgrid] con api_key/from_email.
 def _sendgrid(clave: str) -> str:
