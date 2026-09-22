@@ -117,8 +117,8 @@ def test_el_resumen_habla_de_lo_cobrado_y_no_de_lo_generado():
 
 
 def test_resumen_de_una_semana_sin_movimiento_lo_dice():
-    texto = rs.resumen_texto(rs.kpis_semana(datos()), date(2026, 9, 7), date(2026, 9, 13))
-    assert "no se registraron" in texto
+    texto = rs.resumen_texto(rs.kpis_semana(datos()), date(2026, 9, 18), date(2026, 9, 25))
+    assert texto == "Sin actividad registrada en el período."
 
 
 def test_cuerpo_html_trae_los_tres_kpis_y_el_boton():

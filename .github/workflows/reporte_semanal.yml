@@ -1,29 +1,32 @@
 name: Reporte semanal Agropix
 
-# Lunes 8:00 ART. Argentina usa UTC-3 todo el año (no mueve los relojes desde
-# 2009), así que 8:00 ART = 11:00 UTC de forma estable.
+# Viernes 18:00 ART = 21:00 UTC. Argentina usa UTC-3 todo el año (no mueve los
+# relojes desde 2009), así que el horario no se corre en verano.
 #
-# Sale el lunes y reporta la semana anterior completa (lunes a domingo): el mail
-# del lunes 21/09 trae del 14/09 al 20/09.
+# El período que reporta va de viernes a viernes, ambos inclusive: el envío del
+# viernes 25/09 cubre del 18/09 al 25/09. Lo calcula semana_reporte() en hora de
+# Argentina, no con la UTC del runner.
 #
-# Corre acá y no dentro de la app porque Streamlit Community Cloud duerme la app
-# cuando nadie la visita: un scheduler en un thread de la app se muere con ella.
+# OJO con el cron de GitHub:
+#  - Puede demorarse entre 5 y 30 minutos en horarios de carga, y en casos
+#    extremos saltear una corrida. Si el reporte llega 18:25 es normal.
+#    Por eso el período se calcula sobre el viernes más reciente: aunque el job
+#    corra el sábado, sigue reportando la misma semana.
+#  - En repos PÚBLICOS, GitHub deshabilita los workflows programados tras 60
+#    días sin commits. Este repo es privado, así que no aplica hoy; si alguna
+#    vez se hace público, el workflow "mantener-cron-vivo" lo evita.
 on:
   schedule:
-    - cron: "0 11 * * 1"
-  # Para probarlo cuando quieras desde la pestaña Actions
+    - cron: "0 21 * * 5"
   workflow_dispatch:
     inputs:
+      fecha_corte:
+        description: "Viernes de cierre a simular (YYYY-MM-DD). Vacío = el viernes más reciente"
+        type: string
       dry_run:
         description: "Generar sin enviar (deja el PDF como artifact)"
         type: boolean
-        default: true
-      desde:
-        description: "Inicio del período (YYYY-MM-DD, opcional)"
-        type: string
-      hasta:
-        description: "Fin del período (YYYY-MM-DD, opcional)"
-        type: string
+        default: false
 
 concurrency:
   group: reporte-semanal
@@ -37,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Se chequea antes de instalar nada: si falta un secret, conviene enterarse
+      # Se chequea antes de instalar nada: si falta un secret conviene enterarse
       # en el segundo 10 y no en el minuto 5, con el PDF ya armado
       - name: Verificar secrets
         env:
@@ -84,10 +87,6 @@ jobs:
         env:
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
         run: |
-          if [ -z "$GOOGLE_CREDENTIALS_JSON" ]; then
-            echo "::error::Falta el secret GOOGLE_CREDENTIALS_JSON (contenido de credentials.json)"
-            exit 1
-          fi
           printf '%s' "$GOOGLE_CREDENTIALS_JSON" > credentials.json
           python -c "import json; json.load(open('credentials.json')); print('credentials.json válido')"
 
@@ -97,24 +96,30 @@ jobs:
           VENTAS_SHEET_ID: ${{ secrets.VENTAS_SHEET_ID }}
           CRM_TAB: ${{ secrets.CRM_TAB }}
           VENTAS_TAB: ${{ secrets.VENTAS_TAB }}
-          # Envio por Gmail (SMTP). El App Password NO es la contrasena de la
-          # cuenta: se genera en myaccount.google.com/apppasswords
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          # Alternativa por SendGrid, si algun dia se vuelve a usar
           SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
           EMAIL_REMITENTE: ${{ secrets.EMAIL_REMITENTE }}
-          # Opcional: reemplaza la lista de utils/reporte_semanal.py
-          EMAIL_DESTINATARIOS: ${{ secrets.EMAIL_DESTINATARIOS }}
           URL_APP: ${{ secrets.URL_APP }}
+          REPORTE_AMBOS_VIERNES: ${{ secrets.REPORTE_AMBOS_VIERNES }}
         run: |
-          ARGS=""
+          ARGS="--modo semanal"
+          if [ -n "${{ inputs.fecha_corte }}" ]; then ARGS="$ARGS --fecha-corte ${{ inputs.fecha_corte }}"; fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
-          if [ -n "${{ inputs.desde }}" ]; then ARGS="$ARGS --desde ${{ inputs.desde }}"; fi
-          if [ -n "${{ inputs.hasta }}" ]; then ARGS="$ARGS --hasta ${{ inputs.hasta }}"; fi
           python scripts/enviar_reporte_semanal.py $ARGS
 
-      # El PDF queda descargable desde la corrida, sirva o no el mail
+      # Solo a Franco: el equipo no puede hacer nada con un mail de error
+      - name: Avisar a Franco si falló
+        if: failure()
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          EMAIL_REMITENTE: ${{ secrets.EMAIL_REMITENTE }}
+        run: |
+          python scripts/enviar_reporte_semanal.py --notificar-error \
+            "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" || true
+
       - name: Guardar el PDF de la corrida
         if: always()
         uses: actions/upload-artifact@v4

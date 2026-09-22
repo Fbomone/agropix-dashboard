@@ -1,7 +1,7 @@
 """Valida los workflows de GitHub Actions.
 
 Un error acá no lo agarra ningún linter de Python y recién se ve cuando la
-corrida falla — que en este caso sería un lunes a la mañana, con el reporte sin
+corrida falla — que en este caso sería un viernes a la tarde, con el reporte sin
 salir y nadie mirando.
 """
 from pathlib import Path
@@ -33,7 +33,7 @@ def secrets_usados(workflow: dict) -> set[str]:
     return usados
 
 
-@pytest.mark.parametrize("archivo", ["reporte-semanal.yml", "prueba-envio.yml"])
+@pytest.mark.parametrize("archivo", ["reporte_semanal.yml", "envio_prueba.yml"])
 def test_el_yaml_es_valido_y_tiene_un_job(archivo):
     w = cargar(archivo)
     assert w["name"]
@@ -41,23 +41,23 @@ def test_el_yaml_es_valido_y_tiene_un_job(archivo):
     assert pasos(w), "el job no tiene pasos"
 
 
-def test_el_reporte_sale_los_lunes_8am_argentina():
-    """0 11 * * 1 = lunes 11:00 UTC = 8:00 ART (Argentina es UTC-3 todo el año)."""
-    assert cargar("reporte-semanal.yml")[ON]["schedule"][0]["cron"] == "0 11 * * 1"
+def test_el_reporte_sale_los_viernes_18_argentina():
+    """0 21 * * 5 = viernes 21:00 UTC = 18:00 ART (Argentina es UTC-3 todo el año)."""
+    assert cargar("reporte_semanal.yml")[ON]["schedule"][0]["cron"] == "0 21 * * 5"
 
 
-def test_la_prueba_corre_a_medianoche_argentina():
-    """0 3 * * 1 = lunes 03:00 UTC = 00:00 ART."""
-    assert cargar("prueba-envio.yml")[ON]["schedule"][0]["cron"] == "0 3 * * 1"
+def test_la_prueba_no_tiene_cron():
+    """Es solo manual: si tuviera schedule mandaria mails solo."""
+    assert "schedule" not in cargar("envio_prueba.yml")[ON]
 
 
 def test_los_dos_se_pueden_disparar_a_mano():
-    """Sin workflow_dispatch habría que esperar al lunes para probar."""
-    for archivo in ["reporte-semanal.yml", "prueba-envio.yml"]:
+    """Sin workflow_dispatch habría que esperar al viernes para probar."""
+    for archivo in ["reporte_semanal.yml", "envio_prueba.yml"]:
         assert "workflow_dispatch" in cargar(archivo)[ON]
 
 
-@pytest.mark.parametrize("archivo", ["reporte-semanal.yml", "prueba-envio.yml"])
+@pytest.mark.parametrize("archivo", ["reporte_semanal.yml", "envio_prueba.yml"])
 def test_pasa_los_secrets_que_el_script_necesita(archivo):
     usados = secrets_usados(cargar(archivo))
     for secret in ["SMTP_USER", "SMTP_PASSWORD", "GOOGLE_CREDENTIALS_JSON",
@@ -65,7 +65,7 @@ def test_pasa_los_secrets_que_el_script_necesita(archivo):
         assert secret in usados, f"{archivo} no le pasa {secret} al script"
 
 
-@pytest.mark.parametrize("archivo", ["reporte-semanal.yml", "prueba-envio.yml"])
+@pytest.mark.parametrize("archivo", ["reporte_semanal.yml", "envio_prueba.yml"])
 def test_verifica_los_secrets_antes_de_la_parte_lenta(archivo):
     """Enterarse de que falta un secret recién con el PDF armado es tarde."""
     nombres = [p.get("name", "") for p in pasos(cargar(archivo))]
@@ -75,29 +75,57 @@ def test_verifica_los_secrets_antes_de_la_parte_lenta(archivo):
     assert verificacion < credenciales < envio
 
 
-@pytest.mark.parametrize("archivo", ["reporte-semanal.yml", "prueba-envio.yml"])
+@pytest.mark.parametrize("archivo", ["reporte_semanal.yml", "envio_prueba.yml"])
 def test_borra_las_credenciales_pase_lo_que_pase(archivo):
     borrado = [p for p in pasos(cargar(archivo)) if "Borrar credenciales" in p.get("name", "")]
     assert borrado, f"{archivo} deja credentials.json en el runner"
     assert borrado[0].get("if") == "always()", "tiene que borrarse aunque el envío falle"
 
 
-def test_la_prueba_manda_solo_a_franco():
-    """Es una prueba: no tiene que llegarle al resto del equipo."""
-    envio = next(p for p in pasos(cargar("prueba-envio.yml"))
+def test_la_prueba_usa_el_modo_que_fija_los_destinatarios():
+    """--modo prueba los fija en el codigo: no dependen de un secret."""
+    envio = next(p for p in pasos(cargar("envio_prueba.yml"))
                  if "Enviar reporte" in p.get("name", ""))
-    assert "--destinatarios francobomone14@gmail.com" in envio["run"]
+    assert "--modo prueba" in envio["run"]
     assert "--tipo PRUEBA" in envio["run"]
 
 
-def test_la_prueba_avisa_que_hay_que_borrarla():
-    """Si queda, todos los lunes a medianoche llega un mail de prueba de más."""
-    texto = (WORKFLOWS / "prueba-envio.yml").read_text(encoding="utf-8")
-    assert "BORRAR ESTE ARCHIVO" in texto
+def test_el_semanal_usa_el_modo_semanal():
+    envio = next(p for p in pasos(cargar("reporte_semanal.yml"))
+                 if "Enviar reporte" in p.get("name", ""))
+    assert "--modo semanal" in envio["run"]
+
+
+def test_los_dos_aceptan_una_fecha_de_corte():
+    for archivo in ["reporte_semanal.yml", "envio_prueba.yml"]:
+        assert "fecha_corte" in cargar(archivo)[ON]["workflow_dispatch"]["inputs"]
+
+
+def test_solo_el_semanal_avisa_a_franco_si_falla():
+    """El de prueba lo dispara alguien que esta mirando la pantalla."""
+    aviso = [p for p in pasos(cargar("reporte_semanal.yml"))
+             if "Avisar a Franco" in p.get("name", "")]
+    assert aviso, "el semanal tiene que avisar si falla"
+    assert aviso[0].get("if") == "failure()"
+    assert "--notificar-error" in aviso[0]["run"]
+    assert not [p for p in pasos(cargar("envio_prueba.yml"))
+                if "Avisar" in p.get("name", "")]
 
 
 def test_los_dos_workflows_no_comparten_grupo_de_concurrencia():
-    """Con el mismo grupo, el de las 8 podría cancelar al de medianoche."""
-    a = cargar("reporte-semanal.yml")["concurrency"]["group"]
-    b = cargar("prueba-envio.yml")["concurrency"]["group"]
+    """Con el mismo grupo, uno podria cancelar al otro."""
+    a = cargar("reporte_semanal.yml")["concurrency"]["group"]
+    b = cargar("envio_prueba.yml")["concurrency"]["group"]
     assert a != b
+
+
+def test_el_semanal_documenta_las_dos_trampas_del_cron():
+    texto = (WORKFLOWS / "reporte_semanal.yml").read_text(encoding="utf-8")
+    assert "demorarse" in texto, "el cron de GitHub se atrasa"
+    assert "60" in texto, "los repos publicos pierden el schedule a los 60 dias"
+
+
+def test_no_quedaron_los_workflows_viejos():
+    """Si sobreviven, se mandarian dos reportes: el del lunes y el del viernes."""
+    for viejo in ["reporte-semanal.yml", "prueba-envio.yml"]:
+        assert not (WORKFLOWS / viejo).exists(), f"{viejo} sigue existiendo"

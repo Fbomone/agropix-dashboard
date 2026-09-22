@@ -1,26 +1,24 @@
-name: PRUEBA — envío automático (solo Franco)
+name: Envío de prueba (solo Franco y Matías)
 
-# Workflow TEMPORAL para verificar que el flujo automático funciona de punta a
-# punta: lee los Sheets, arma el PDF y manda el mail, sin que nadie toque nada.
+# SOLO manual. No tiene schedule a propósito: es para probar el circuito
+# completo —leer Sheets, armar el PDF, mandar el mail— sin que le llegue al
+# resto del equipo.
 #
-# Lunes 00:00 ART = 03:00 UTC. Manda SOLO a francobomone14@gmail.com, así se
-# prueba sin molestar al resto. El envío real a los 7 sale a las 8:00 ART desde
-# reporte-semanal.yml: son dos workflows distintos y no se pisan.
-#
-# CUANDO LA PRUEBA SALGA BIEN, BORRAR ESTE ARCHIVO. Si no, todos los lunes a
-# medianoche va a llegar un mail de prueba además del de las 8.
+# Manda el MISMO mail y el MISMO PDF que el semanal; lo único que cambia es el
+# asunto, prefijado con [PRUEBA], y que los destinatarios son dos.
 on:
-  schedule:
-    - cron: "0 3 * * 1"
   workflow_dispatch:
     inputs:
+      fecha_corte:
+        description: "Viernes de cierre a simular (YYYY-MM-DD). Vacío = el viernes más reciente"
+        type: string
       dry_run:
         description: "Generar sin enviar (deja el PDF como artifact)"
         type: boolean
         default: false
 
 concurrency:
-  group: prueba-envio
+  group: envio-prueba
   cancel-in-progress: false
 
 jobs:
@@ -31,12 +29,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verificar secrets
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          CRM_SHEET_ID: ${{ secrets.CRM_SHEET_ID }}
+          VENTAS_SHEET_ID: ${{ secrets.VENTAS_SHEET_ID }}
+        run: |
+          faltan=""
+          [ -z "$GOOGLE_CREDENTIALS_JSON" ] && faltan="$faltan GOOGLE_CREDENTIALS_JSON"
+          [ -z "$CRM_SHEET_ID" ] && faltan="$faltan CRM_SHEET_ID"
+          [ -z "$VENTAS_SHEET_ID" ] && faltan="$faltan VENTAS_SHEET_ID"
+          if [ -z "$SMTP_USER$SENDGRID_API_KEY" ]; then
+            faltan="$faltan SMTP_USER+SMTP_PASSWORD(o SENDGRID_API_KEY)"
+          elif [ -n "$SMTP_USER" ] && [ -z "$SMTP_PASSWORD" ]; then
+            faltan="$faltan SMTP_PASSWORD"
+          fi
+          if [ -n "$faltan" ]; then
+            echo "::error::Faltan secrets en Settings → Secrets and variables → Actions:$faltan"
+            exit 1
+          fi
+          echo "Todos los secrets necesarios están cargados."
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
           cache: pip
 
-      # kaleido necesita un navegador para exportar los gráficos de Plotly a PNG
       - name: Instalar Chromium
         run: |
           sudo apt-get update
@@ -48,28 +69,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # Se chequea antes de leer Sheets y armar el PDF: si falta un secret,
-      # conviene enterarse en el segundo 10 y no en el minuto 5
-      - name: Verificar secrets
-        env:
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
-          CRM_SHEET_ID: ${{ secrets.CRM_SHEET_ID }}
-          VENTAS_SHEET_ID: ${{ secrets.VENTAS_SHEET_ID }}
-        run: |
-          faltan=""
-          [ -z "$SMTP_USER" ] && faltan="$faltan SMTP_USER"
-          [ -z "$SMTP_PASSWORD" ] && faltan="$faltan SMTP_PASSWORD"
-          [ -z "$GOOGLE_CREDENTIALS_JSON" ] && faltan="$faltan GOOGLE_CREDENTIALS_JSON"
-          [ -z "$CRM_SHEET_ID" ] && faltan="$faltan CRM_SHEET_ID"
-          [ -z "$VENTAS_SHEET_ID" ] && faltan="$faltan VENTAS_SHEET_ID"
-          if [ -n "$faltan" ]; then
-            echo "::error::Faltan secrets en Settings → Secrets and variables → Actions:$faltan"
-            exit 1
-          fi
-          echo "Todos los secrets necesarios están cargados."
-
       - name: Escribir credenciales de Google
         env:
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
@@ -77,6 +76,8 @@ jobs:
           printf '%s' "$GOOGLE_CREDENTIALS_JSON" > credentials.json
           python -c "import json; json.load(open('credentials.json')); print('credentials.json válido')"
 
+      # --modo prueba fija los destinatarios en el codigo: aunque alguien pase
+      # otra lista por secrets, este workflow manda solo a Franco y Matias
       - name: Enviar reporte de prueba
         env:
           CRM_SHEET_ID: ${{ secrets.CRM_SHEET_ID }}
@@ -85,9 +86,13 @@ jobs:
           VENTAS_TAB: ${{ secrets.VENTAS_TAB }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          EMAIL_REMITENTE: ${{ secrets.EMAIL_REMITENTE }}
           URL_APP: ${{ secrets.URL_APP }}
+          REPORTE_AMBOS_VIERNES: ${{ secrets.REPORTE_AMBOS_VIERNES }}
         run: |
-          ARGS="--destinatarios francobomone14@gmail.com --tipo PRUEBA"
+          ARGS="--modo prueba --tipo PRUEBA"
+          if [ -n "${{ inputs.fecha_corte }}" ]; then ARGS="$ARGS --fecha-corte ${{ inputs.fecha_corte }}"; fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
           python scripts/enviar_reporte_semanal.py $ARGS
 
@@ -95,7 +100,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: prueba-envio
+          name: envio-prueba
           path: salida/
           if-no-files-found: ignore
           retention-days: 7

@@ -29,10 +29,10 @@ from utils.comisiones import kpis_comisiones, top_clientes
 
 TZ_ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
 
-# Destinatarios del reporte semanal. Se pueden sobreescribir desde los secrets
-# con EMAIL_DESTINATARIOS (lista separada por comas).
-# infoagropix@ salio de la lista: sigue teniendo acceso a la app, pero no
-# recibe el mail.
+# ---------------------------------------------------------------------------
+# Destinatarios: UNA sola fuente, compartida por el mail, el CLI y la pestania
+# Administracion de la app. Cambiar la lista aca la cambia en los tres lados.
+# ---------------------------------------------------------------------------
 DESTINATARIOS = (
     "francobomone14@gmail.com",     # Franco
     "matias21tossen@gmail.com",     # Matias
@@ -41,6 +41,55 @@ DESTINATARIOS = (
     "nicotobaldi55@gmail.com",      # Luciano
     "fabiocailletbois@gmail.com",   # Fabio
 )
+
+# El envio de prueba va solo a estos dos, nunca al resto del equipo.
+DESTINATARIOS_PRUEBA = (
+    "francobomone14@gmail.com",     # Franco
+    "matias21tossen@gmail.com",     # Matias
+)
+
+# A quien avisarle si el envio automatico falla. Solo Franco: es quien puede
+# arreglarlo, y un mail de error al equipo entero no le sirve a nadie.
+AVISO_DE_ERROR = "francobomone14@gmail.com"
+
+# Filtro explicito, no por omision. La direccion salio de la lista, pero si
+# alguien la vuelve a agregar —o llega por EMAIL_DESTINATARIOS en los secrets—
+# igual queda afuera del reporte. Conserva el acceso a la app.
+EXCLUIDOS = ("infoagropix",)
+
+MODO_PRUEBA, MODO_SEMANAL = "prueba", "semanal"
+
+
+def excluido(email: str) -> bool:
+    """True si la direccion contiene alguno de los fragmentos vetados."""
+    limpio = (email or "").strip().lower()
+    return any(fragmento in limpio for fragmento in EXCLUIDOS)
+
+
+def destinatarios(modo: str = MODO_SEMANAL, lista: list[str] | None = None) -> list[str]:
+    """A quien le llega el reporte, ya filtrado y sin repetidos.
+
+    modo="prueba" ignora la lista completa y manda solo a Franco y Matias.
+    `lista` permite pasar destinatarios a mano (por ejemplo desde los secrets o
+    desde --destinatarios); el filtro de EXCLUIDOS se aplica igual.
+    """
+    if modo == MODO_PRUEBA:
+        base = list(lista) if lista else list(DESTINATARIOS_PRUEBA)
+    else:
+        base = list(lista) if lista else list(DESTINATARIOS)
+
+    vistos, salida = set(), []
+    for email in base:
+        limpio = (email or "").strip().lower()
+        if not limpio or limpio in vistos or excluido(limpio):
+            continue
+        vistos.add(limpio)
+        salida.append(limpio)
+    return salida
+
+
+def prefijo_asunto(modo: str) -> str:
+    return "[PRUEBA] " if modo == MODO_PRUEBA else ""
 
 
 # ---------------------------------------------------------------------------
@@ -106,8 +155,9 @@ def titulo_reporte(desde: date, hasta: date) -> str:
     return f"REPORTE SEMANAL — {etiqueta_periodo(desde, hasta)}"
 
 
-def asunto(desde: date, hasta: date) -> str:
-    return f"Reporte Semanal Agropix - [{etiqueta_periodo(desde, hasta)}]"
+def asunto(desde: date, hasta: date, modo: str = MODO_SEMANAL) -> str:
+    return (f"{prefijo_asunto(modo)}Reporte Semanal Agropix - "
+            f"[{etiqueta_periodo(desde, hasta)}]")
 
 
 def nombre_pdf(hasta: date) -> str:
@@ -158,10 +208,15 @@ def resumen_texto(k: dict, desde: date, hasta: date) -> str:
         partes.append(
             f"Se trabajaron {_numero(k['hectareas'])} ha en {k['cantidad_servicios']} trabajos."
         )
-    if k["cantidad_servicios"] == 0 and k.get("total_negocio", k["comision_generada"]) == 0:
-        return (f"Entre el {desde:%d/%m} y el {hasta:%d/%m} no se registraron "
-                "trabajos ni ventas de equipos en las planillas.")
+    if sin_actividad(k):
+        return "Sin actividad registrada en el período."
     return " ".join(partes)
+
+
+def sin_actividad(k: dict) -> bool:
+    """Ni trabajos ni ventas de equipos en el periodo."""
+    return (k["cantidad_servicios"] == 0
+            and k.get("total_negocio", k["comision_generada"]) == 0)
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +289,8 @@ def cuerpo_html(k: dict, desde: date, hasta: date, clientes: pd.DataFrame | None
 
   <p style="line-height:1.55">{resumen_texto(k, desde, hasta)}</p>
 
+  {_desglose(k)}
+
   {_tabla_clientes(clientes)}
 
   <p style="margin:24px 0 8px 0">
@@ -256,6 +313,43 @@ def cuerpo_html(k: dict, desde: date, hasta: date, clientes: pd.DataFrame | None
   </p>
 </div>
 """
+
+
+_FILA_DESGLOSE = """
+    <tr style="background:{fondo}">
+      <td style="padding:7px 10px;border-bottom:1px solid #E5E9EC">{concepto}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #E5E9EC;text-align:right">{valor}</td>
+    </tr>"""
+
+
+def _desglose(k: dict) -> str:
+    """Las cifras que el equipo mira al abrir el mail, sin tener que ir al PDF."""
+    if sin_actividad(k):
+        return ""
+    filas = [
+        ("Ingresos del período", _moneda(k.get("total_negocio", k["comision_generada"]))),
+        ("Comisiones cobradas", _moneda(k["comision_cobrada"])),
+        ("Comisiones por cobrar", _moneda(k["por_cobrar"])),
+        ("Venta de servicios", _moneda(k["generado_servicios"])),
+        ("Venta de equipos (comisión)", _moneda(k["generada_equipos"])),
+        ("Hectáreas trabajadas", f"{_numero(k['hectareas'])} ha"),
+        ("Clientes", _numero(k["clientes"])),
+    ]
+    cuerpo = "".join(
+        _FILA_DESGLOSE.format(fondo="#FFFFFF" if i % 2 else "#FAFBFC",
+                              concepto=concepto, valor=valor)
+        for i, (concepto, valor) in enumerate(filas)
+    )
+    return f"""
+  <h3 style="font-size:15px;margin:22px 0 8px 0">Resumen del período</h3>
+  <table width="100%" cellpadding="0" cellspacing="0"
+         style="border-collapse:collapse;font-size:13px">
+    <tr style="background:#2E7D32;color:#FFFFFF">
+      <th style="padding:8px 10px;text-align:left">Concepto</th>
+      <th style="padding:8px 10px;text-align:right">Valor</th>
+    </tr>
+    {cuerpo}
+  </table>"""
 
 
 def _tabla_clientes(clientes: pd.DataFrame | None) -> str:
