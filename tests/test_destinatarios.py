@@ -18,6 +18,35 @@ def test_el_modo_prueba_manda_solo_a_franco_y_matias():
         "francobomone14@gmail.com", "matias21tossen@gmail.com"]
 
 
+def test_el_modo_desarrollo_manda_solo_a_franco():
+    assert rs.destinatarios(rs.MODO_DESARROLLO) == ["francobomone14@gmail.com"]
+
+
+def test_los_tres_circulos_son_concentricos():
+    """Cada modo incluye al anterior: probar en el chico sirve para el grande."""
+    dev = set(rs.destinatarios(rs.MODO_DESARROLLO))
+    test = set(rs.destinatarios(rs.MODO_PRUEBA))
+    prod = set(rs.destinatarios(rs.MODO_SEMANAL))
+    assert dev < test < prod
+    assert len(dev) == 1 and len(test) == 2 and len(prod) == 6
+
+
+def test_cada_modo_tiene_su_prefijo_de_asunto():
+    assert rs.prefijo_asunto(rs.MODO_DESARROLLO) == "[DEV] "
+    assert rs.prefijo_asunto(rs.MODO_PRUEBA) == "[PRUEBA] "
+    assert rs.prefijo_asunto(rs.MODO_SEMANAL) == "", "el real no lleva prefijo"
+
+
+def test_el_asunto_de_desarrollo_avisa_que_es_dev():
+    a = rs.asunto(date(2026, 9, 18), date(2026, 9, 25), rs.MODO_DESARROLLO)
+    assert a.startswith("[DEV] ")
+
+
+def test_ningun_modo_deja_entrar_a_infoagropix():
+    for modo in rs.MODOS:
+        assert not any(rs.excluido(e) for e in rs.destinatarios(modo))
+
+
 def test_los_de_prueba_estan_dentro_de_la_lista_general():
     """Si alguno no estuviera, probariamos con una direccion que no recibe."""
     for email in rs.DESTINATARIOS_PRUEBA:

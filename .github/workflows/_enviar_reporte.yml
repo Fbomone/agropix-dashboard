@@ -1,34 +1,45 @@
-name: Envío de prueba (solo Franco y Matías)
+name: (interno) Enviar reporte
 
-# SOLO manual. No tiene schedule a propósito: es para probar el circuito
-# completo —leer Sheets, armar el PDF, mandar el mail— sin que le llegue al
-# resto del equipo.
+# Workflow REUTILIZABLE: acá viven los pasos de verdad. No se dispara solo —
+# lo llaman envio_desarrollo.yml, envio_test.yml y reporte_semanal.yml.
 #
-# Manda el MISMO mail y el MISMO PDF que el semanal; lo único que cambia es el
-# asunto, prefijado con [PRUEBA], y que los destinatarios son dos.
+# Está así para que los tres corran exactamente el mismo circuito: leer Sheets,
+# armar el PDF, mandar el mail y avisar si falla. Lo único que cambia entre
+# ellos es el `modo`, que decide a quién le llega y qué prefijo lleva el asunto.
+# Un arreglo acá arregla los tres; con tres copias, uno queda desactualizado.
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      fecha_corte:
-        description: "Viernes de cierre a simular (YYYY-MM-DD). Vacío = el viernes más reciente"
+      modo:
+        description: "desarrollo (solo Franco) | prueba (Franco y Matías) | semanal (todos)"
         type: string
+        required: true
+      fecha_corte:
+        description: "Viernes de cierre a simular (YYYY-MM-DD)"
+        type: string
+        required: false
+        default: ""
       dry_run:
-        description: "Generar sin enviar (deja el PDF como artifact)"
+        description: "Generar sin enviar"
         type: boolean
+        required: false
         default: false
-
-concurrency:
-  group: envio-prueba
-  cancel-in-progress: false
+      tipo_historial:
+        description: "Cómo queda registrado el envío: AUTOMATICO | MANUAL | PRUEBA"
+        type: string
+        required: false
+        default: "MANUAL"
 
 jobs:
-  probar:
+  enviar:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
 
+      # Antes de instalar nada: si falta un secret conviene enterarse en el
+      # segundo 10 y no en el minuto 5, con el PDF ya armado
       - name: Verificar secrets
         env:
           SMTP_USER: ${{ secrets.SMTP_USER }}
@@ -51,13 +62,14 @@ jobs:
             echo "::error::Faltan secrets en Settings → Secrets and variables → Actions:$faltan"
             exit 1
           fi
-          echo "Todos los secrets necesarios están cargados."
+          echo "Modo: ${{ inputs.modo }} · todos los secrets necesarios están cargados."
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
           cache: pip
 
+      # kaleido necesita un navegador para exportar los gráficos de Plotly a PNG
       - name: Instalar Chromium
         run: |
           sudo apt-get update
@@ -76,9 +88,9 @@ jobs:
           printf '%s' "$GOOGLE_CREDENTIALS_JSON" > credentials.json
           python -c "import json; json.load(open('credentials.json')); print('credentials.json válido')"
 
-      # --modo prueba fija los destinatarios en el codigo: aunque alguien pase
-      # otra lista por secrets, este workflow manda solo a Franco y Matias
-      - name: Enviar reporte de prueba
+      # El modo fija los destinatarios en el codigo: un secret mal cargado no
+      # puede convertir una prueba en un envio a todo el equipo
+      - name: Enviar reporte
         env:
           CRM_SHEET_ID: ${{ secrets.CRM_SHEET_ID }}
           VENTAS_SHEET_ID: ${{ secrets.VENTAS_SHEET_ID }}
@@ -91,19 +103,32 @@ jobs:
           URL_APP: ${{ secrets.URL_APP }}
           REPORTE_AMBOS_VIERNES: ${{ secrets.REPORTE_AMBOS_VIERNES }}
         run: |
-          ARGS="--modo prueba --tipo PRUEBA"
+          ARGS="--modo ${{ inputs.modo }} --tipo ${{ inputs.tipo_historial }}"
           if [ -n "${{ inputs.fecha_corte }}" ]; then ARGS="$ARGS --fecha-corte ${{ inputs.fecha_corte }}"; fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
           python scripts/enviar_reporte_semanal.py $ARGS
+
+      # Solo a Franco, en los tres modos: el equipo no puede hacer nada con un
+      # mail de error, y el unico que tiene acceso a los secrets es él
+      - name: Avisar a Franco si falló
+        if: failure()
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          EMAIL_REMITENTE: ${{ secrets.EMAIL_REMITENTE }}
+        run: |
+          python scripts/enviar_reporte_semanal.py --notificar-error \
+            "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" || true
 
       - name: Guardar el PDF de la corrida
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: envio-prueba
+          name: reporte-${{ inputs.modo }}
           path: salida/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 30
 
       - name: Borrar credenciales
         if: always()

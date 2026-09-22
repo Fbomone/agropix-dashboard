@@ -37,8 +37,7 @@ from utils.data import aplicar_filtros, cargar_precios, construir_datos  # noqa:
 from utils import envio_log  # noqa: E402
 from utils.email_sender import configurado, enviar_individual  # noqa: E402
 from utils.reporte_semanal import (  # noqa: E402
-    AVISO_DE_ERROR, MODO_PRUEBA, MODO_SEMANAL, TZ_ARGENTINA, asunto, cuerpo_html,
-    destinatarios,
+    AVISO_DE_ERROR, MODOS, MODO_SEMANAL, TZ_ARGENTINA, asunto, cuerpo_html, destinatarios,
     etiqueta_periodo, kpis_semana, nombre_pdf, semana_reporte, top_clientes_semana,
 )
 
@@ -47,9 +46,9 @@ log = logging.getLogger("agropix.reporte")
 
 def argumentos(argv=None):
     p = argparse.ArgumentParser(description="Reporte semanal de Agropix por mail")
-    p.add_argument("--modo", choices=[MODO_SEMANAL, MODO_PRUEBA], default=MODO_SEMANAL,
-                   help="semanal: a toda la lista. prueba: solo Franco y Matías, "
-                        "con el asunto prefijado [PRUEBA]")
+    p.add_argument("--modo", choices=list(MODOS), default=MODO_SEMANAL,
+                   help="desarrollo: solo Franco, asunto [DEV]. prueba: Franco y Matías, "
+                        "asunto [PRUEBA]. semanal: toda la lista, sin prefijo")
     p.add_argument("--fecha-corte", type=_fecha, dest="fecha_corte",
                    help="viernes de cierre a simular (YYYY-MM-DD). Si no es viernes se "
                         "toma el viernes anterior más cercano")

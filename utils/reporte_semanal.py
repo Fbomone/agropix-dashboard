@@ -42,7 +42,12 @@ DESTINATARIOS = (
     "fabiocailletbois@gmail.com",   # Fabio
 )
 
-# El envio de prueba va solo a estos dos, nunca al resto del equipo.
+# Tres circulos concentricos, de menor a mayor alcance. La idea es probar
+# siempre en el mas chico antes de pasar al siguiente.
+DESTINATARIOS_DESARROLLO = (
+    "francobomone14@gmail.com",     # Franco y nadie mas: para probar cualquier cosa
+)
+
 DESTINATARIOS_PRUEBA = (
     "francobomone14@gmail.com",     # Franco
     "matias21tossen@gmail.com",     # Matias
@@ -57,7 +62,17 @@ AVISO_DE_ERROR = "francobomone14@gmail.com"
 # igual queda afuera del reporte. Conserva el acceso a la app.
 EXCLUIDOS = ("infoagropix",)
 
-MODO_PRUEBA, MODO_SEMANAL = "prueba", "semanal"
+MODO_DESARROLLO, MODO_PRUEBA, MODO_SEMANAL = "desarrollo", "prueba", "semanal"
+MODOS = (MODO_DESARROLLO, MODO_PRUEBA, MODO_SEMANAL)
+
+# Quien recibe en cada modo. El semanal es el unico que puede tomar la lista de
+# los secrets; los otros dos la tienen fija en el codigo a proposito, asi un
+# secret mal cargado no convierte una prueba en un envio a todo el equipo.
+POR_MODO = {
+    MODO_DESARROLLO: DESTINATARIOS_DESARROLLO,
+    MODO_PRUEBA: DESTINATARIOS_PRUEBA,
+    MODO_SEMANAL: DESTINATARIOS,
+}
 
 
 def excluido(email: str) -> bool:
@@ -67,16 +82,13 @@ def excluido(email: str) -> bool:
 
 
 def destinatarios(modo: str = MODO_SEMANAL, lista: list[str] | None = None) -> list[str]:
-    """A quien le llega el reporte, ya filtrado y sin repetidos.
+    """A quien le llega el reporte, ya filtrado, normalizado y sin repetidos.
 
-    modo="prueba" ignora la lista completa y manda solo a Franco y Matias.
-    `lista` permite pasar destinatarios a mano (por ejemplo desde los secrets o
+    desarrollo -> solo Franco. prueba -> Franco y Matias. semanal -> la lista
+    completa. `lista` permite pasar destinatarios a mano (desde los secrets o
     desde --destinatarios); el filtro de EXCLUIDOS se aplica igual.
     """
-    if modo == MODO_PRUEBA:
-        base = list(lista) if lista else list(DESTINATARIOS_PRUEBA)
-    else:
-        base = list(lista) if lista else list(DESTINATARIOS)
+    base = list(lista) if lista else list(POR_MODO.get(modo, DESTINATARIOS))
 
     vistos, salida = set(), []
     for email in base:
@@ -89,7 +101,8 @@ def destinatarios(modo: str = MODO_SEMANAL, lista: list[str] | None = None) -> l
 
 
 def prefijo_asunto(modo: str) -> str:
-    return "[PRUEBA] " if modo == MODO_PRUEBA else ""
+    """El asunto dice de entrada si es un envio real o una prueba."""
+    return {MODO_DESARROLLO: "[DEV] ", MODO_PRUEBA: "[PRUEBA] "}.get(modo, "")
 
 
 # ---------------------------------------------------------------------------

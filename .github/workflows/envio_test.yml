@@ -1,0 +1,31 @@
+name: 2 · Test — Franco y Matías
+
+# El circulo del medio: manda a Franco Y a Matias, con el asunto prefijado
+# [PRUEBA]. Es el paso previo al envio real: si el mail se ve bien para los dos,
+# ya se puede mandar a todo el equipo.
+#
+# Solo manual: no tiene schedule a proposito.
+on:
+  workflow_dispatch:
+    inputs:
+      fecha_corte:
+        description: "Viernes de cierre a simular (YYYY-MM-DD). Vacío = el viernes más reciente"
+        type: string
+      dry_run:
+        description: "Generar sin enviar (deja el PDF como artifact)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: envio-test
+  cancel-in-progress: false
+
+jobs:
+  enviar:
+    uses: ./.github/workflows/_enviar_reporte.yml
+    secrets: inherit
+    with:
+      modo: prueba
+      fecha_corte: ${{ inputs.fecha_corte }}
+      dry_run: ${{ inputs.dry_run }}
+      tipo_historial: PRUEBA

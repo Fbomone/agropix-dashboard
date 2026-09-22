@@ -1,20 +1,20 @@
-name: Reporte semanal Agropix
+name: 3 · Reporte semanal — todos (PRODUCTIVO)
 
-# Viernes 18:00 ART = 21:00 UTC. Argentina usa UTC-3 todo el año (no mueve los
-# relojes desde 2009), así que el horario no se corre en verano.
+# El envio real, a los 6 destinatarios. Viernes 18:00 ART = 21:00 UTC.
+# Argentina usa UTC-3 todo el año (no mueve los relojes desde 2009), asi que el
+# horario no se corre en verano.
 #
-# El período que reporta va de viernes a viernes, ambos inclusive: el envío del
-# viernes 25/09 cubre del 18/09 al 25/09. Lo calcula semana_reporte() en hora de
+# El periodo va de viernes a viernes, ambos inclusive: el envio del viernes
+# 25/09 cubre del 18/09 al 25/09. Lo calcula semana_reporte() en hora de
 # Argentina, no con la UTC del runner.
 #
 # OJO con el cron de GitHub:
 #  - Puede demorarse entre 5 y 30 minutos en horarios de carga, y en casos
-#    extremos saltear una corrida. Si el reporte llega 18:25 es normal.
-#    Por eso el período se calcula sobre el viernes más reciente: aunque el job
-#    corra el sábado, sigue reportando la misma semana.
-#  - En repos PÚBLICOS, GitHub deshabilita los workflows programados tras 60
-#    días sin commits. Este repo es privado, así que no aplica hoy; si alguna
-#    vez se hace público, el workflow "mantener-cron-vivo" lo evita.
+#    extremos saltear una corrida. Si el reporte llega 18:25, es normal. Por eso
+#    el periodo se calcula sobre el viernes mas reciente: aunque el job corra el
+#    sabado, sigue reportando la misma semana.
+#  - En repos PUBLICOS, GitHub deshabilita los workflows programados tras 60
+#    dias sin commits. Este repo es privado, asi que hoy no aplica.
 on:
   schedule:
     - cron: "0 21 * * 5"
@@ -34,101 +34,12 @@ concurrency:
 
 jobs:
   enviar:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@v4
-
-      # Se chequea antes de instalar nada: si falta un secret conviene enterarse
-      # en el segundo 10 y no en el minuto 5, con el PDF ya armado
-      - name: Verificar secrets
-        env:
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
-          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
-          CRM_SHEET_ID: ${{ secrets.CRM_SHEET_ID }}
-          VENTAS_SHEET_ID: ${{ secrets.VENTAS_SHEET_ID }}
-        run: |
-          faltan=""
-          [ -z "$GOOGLE_CREDENTIALS_JSON" ] && faltan="$faltan GOOGLE_CREDENTIALS_JSON"
-          [ -z "$CRM_SHEET_ID" ] && faltan="$faltan CRM_SHEET_ID"
-          [ -z "$VENTAS_SHEET_ID" ] && faltan="$faltan VENTAS_SHEET_ID"
-          if [ -z "$SMTP_USER$SENDGRID_API_KEY" ]; then
-            faltan="$faltan SMTP_USER+SMTP_PASSWORD(o SENDGRID_API_KEY)"
-          elif [ -n "$SMTP_USER" ] && [ -z "$SMTP_PASSWORD" ]; then
-            faltan="$faltan SMTP_PASSWORD"
-          fi
-          if [ -n "$faltan" ]; then
-            echo "::error::Faltan secrets en Settings → Secrets and variables → Actions:$faltan"
-            exit 1
-          fi
-          echo "Todos los secrets necesarios están cargados."
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          cache: pip
-
-      # kaleido necesita un navegador para exportar los gráficos de Plotly a PNG
-      - name: Instalar Chromium
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends chromium-browser || \
-            sudo apt-get install -y --no-install-recommends chromium
-
-      - name: Instalar dependencias
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Escribir credenciales de Google
-        env:
-          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
-        run: |
-          printf '%s' "$GOOGLE_CREDENTIALS_JSON" > credentials.json
-          python -c "import json; json.load(open('credentials.json')); print('credentials.json válido')"
-
-      - name: Enviar reporte
-        env:
-          CRM_SHEET_ID: ${{ secrets.CRM_SHEET_ID }}
-          VENTAS_SHEET_ID: ${{ secrets.VENTAS_SHEET_ID }}
-          CRM_TAB: ${{ secrets.CRM_TAB }}
-          VENTAS_TAB: ${{ secrets.VENTAS_TAB }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
-          EMAIL_REMITENTE: ${{ secrets.EMAIL_REMITENTE }}
-          URL_APP: ${{ secrets.URL_APP }}
-          REPORTE_AMBOS_VIERNES: ${{ secrets.REPORTE_AMBOS_VIERNES }}
-        run: |
-          ARGS="--modo semanal"
-          if [ -n "${{ inputs.fecha_corte }}" ]; then ARGS="$ARGS --fecha-corte ${{ inputs.fecha_corte }}"; fi
-          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
-          python scripts/enviar_reporte_semanal.py $ARGS
-
-      # Solo a Franco: el equipo no puede hacer nada con un mail de error
-      - name: Avisar a Franco si falló
-        if: failure()
-        env:
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
-          EMAIL_REMITENTE: ${{ secrets.EMAIL_REMITENTE }}
-        run: |
-          python scripts/enviar_reporte_semanal.py --notificar-error \
-            "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" || true
-
-      - name: Guardar el PDF de la corrida
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: reporte-semanal
-          path: salida/
-          if-no-files-found: ignore
-          retention-days: 30
-
-      - name: Borrar credenciales
-        if: always()
-        run: rm -f credentials.json
+    uses: ./.github/workflows/_enviar_reporte.yml
+    secrets: inherit
+    with:
+      modo: semanal
+      fecha_corte: ${{ inputs.fecha_corte }}
+      dry_run: ${{ inputs.dry_run }}
+      # Si lo dispara el cron queda como AUTOMATICO en el historial; si lo
+      # corre alguien a mano, como MANUAL
+      tipo_historial: ${{ github.event_name == 'schedule' && 'AUTOMATICO' || 'MANUAL' }}
