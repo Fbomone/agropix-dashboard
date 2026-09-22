@@ -7,7 +7,7 @@ from utils.data import (
     COBRADO, EQUIPOS, POR_COBRAR, kpis_equipos, resumen_por_modelo, vigentes,
 )
 from utils.format import (
-    AMBAR, COLORES_COBRO, COLORES_UNIDAD, ETIQUETA_MONEDA, HOVER_MONEDA,
+    COLORES_COBRO, COLORES_UNIDAD, ETIQUETA_MONEDA, HOVER_MONEDA,
     formatear_moneda_card, formatear_moneda_completa, formatear_numero,
 )
 from utils.ui import (
@@ -32,7 +32,7 @@ tarjetas_kpi([
          gradiente="cobradas"),
     dict(label="⏳ Comisión por cobrar", valor=formatear_moneda_card(k["comision_por_cobrar"]),
          gradiente="por_cobrar"),
-    dict(label="🎫 Ticket por equipo", valor=formatear_moneda_card(te["ticket_cobrado"]),
+    dict(label="🎫 Ticket por equipo", valor=formatear_moneda_card(te["ticket_generado"]),
          gradiente="generadas"),
     dict(label="🛸 Unidades vendidas", valor=formatear_numero(k["unidades"]), gradiente="neutro"),
     dict(label="📦 Volumen intermediado", valor=formatear_moneda_card(k["monto"]),
@@ -57,18 +57,15 @@ if hay_datos(rm):
     g1, g2 = st.columns(2)
     with g1:
         st.markdown("**Unidades vendidas**")
-        unid = rm.melt(id_vars="modelo", value_vars=["unidades_prorrateadas", "unidades_pendientes"],
-                       var_name="tipo", value_name="cantidad")
-        unid["tipo"] = unid["tipo"].map({"unidades_prorrateadas": "Con monto asignado",
-                                         "unidades_pendientes": "Pendiente de precio"})
-        unid = unid[unid["cantidad"] > 0]
-        fig = px.bar(unid, x="cantidad", y="modelo", color="tipo", orientation="h",
-                     color_discrete_map={"Con monto asignado": COLOR, "Pendiente de precio": AMBAR},
-                     category_orders={"tipo": ["Con monto asignado", "Pendiente de precio"]},
-                     labels={"modelo": "", "cantidad": "Unidades", "tipo": ""})
-        fig.update_yaxes(categoryorder="total ascending")
+        # Sin partir por estado de precio: el dato es cuantas se vendieron
+        unid = rm[rm["unidades"] > 0].sort_values("unidades")
+        fig = px.bar(unid, x="unidades", y="modelo", orientation="h",
+                     labels={"modelo": "", "unidades": "Unidades"})
+        fig.update_traces(marker_color=COLOR, texttemplate="%{x:d}", textposition="outside",
+                          cliponaxis=False,
+                          hovertemplate="%{y}<br>%{x} unidades<extra></extra>")
         fig.update_xaxes(tickformat=",d")
-        fig.update_traces(hovertemplate="%{y} · %{fullData.name}<br>%{x} unidades<extra></extra>")
+        espacio_para_etiquetas(fig, unid["unidades"].max(), eje="x")
         grafico(fig, key="unidades_por_modelo", eje_moneda=None)
     with g2:
         st.markdown("**Facturado s/IVA prorrateado por modelo**")
@@ -98,16 +95,20 @@ if hay_datos(rm):
 st.divider()
 g3, g4 = st.columns(2)
 with g3:
-    st.subheader("Formas de pago")
+    st.subheader("Comisión por forma de pago")
     if hay_datos(v):
+        # Se reparte la COMISION, que es lo que gana Agropix. Antes el tamaño de
+        # cada porcion salia del Facturado s/IVA, que es plata del proveedor.
         pagos = (v.assign(forma_pago=v["forma_pago"].astype("string").fillna("Sin dato"))
                  .groupby("forma_pago", as_index=False)
-                 .agg(operaciones=("id_operacion", "size"), monto=("factura", "sum")))
-        fig = px.pie(pagos, values="operaciones", names="forma_pago", hole=0.5, custom_data=["monto"],
+                 .agg(comision=("comision", "sum"), operaciones=("id_operacion", "size")))
+        pagos = pagos[pagos["comision"] > 0]
+        fig = px.pie(pagos, values="comision", names="forma_pago", hole=0.5,
+                     custom_data=["operaciones"],
                      color_discrete_sequence=px.colors.sequential.Blues_r[:-2])
-        fig.update_traces(texttemplate="%{percent:.1%}",
-                          hovertemplate=f"%{{label}}<br>%{{value}} operaciones (%{{percent:.1%}})"
-                                        f"<br>Facturado s/IVA: %{{customdata[0]:{HOVER_MONEDA}}}<extra></extra>")
+        fig.update_traces(texttemplate=f"%{{percent:.1%}}<br>%{{value:{ETIQUETA_MONEDA}}}",
+                          hovertemplate=f"%{{label}}<br>Comisión: %{{value:{HOVER_MONEDA}}} "
+                                        f"(%{{percent:.1%}})<br>%{{customdata[0]}} operaciones<extra></extra>")
         grafico(fig, key="formas_de_pago", eje_moneda=None)
 with g4:
     st.subheader("Comisión por canal (origen del lead)")

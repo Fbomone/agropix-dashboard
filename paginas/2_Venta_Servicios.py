@@ -31,9 +31,10 @@ tarjetas_kpi([
          nota=f"{formatear_moneda_card(k['ventas'] / k['hectareas']) if k['hectareas'] else '—'} por ha",
          gradiente="hectareas"),
     dict(label="🎫 Ticket promedio", valor=formatear_moneda_card(k["ticket_promedio"]),
-         nota="Por trabajo", gradiente="generadas"),
+         nota=f"Sobre {formatear_numero(k['trabajos'])} trabajos con monto cargado",
+         gradiente="generadas"),
     dict(label="👥 Clientes", valor=formatear_numero(k["clientes"]),
-         nota="Con al menos una venta en el período", gradiente="neutro"),
+         nota="Con al menos un trabajo en el período", gradiente="neutro"),
 ], columnas=4)
 
 st.divider()

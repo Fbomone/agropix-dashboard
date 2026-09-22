@@ -159,12 +159,17 @@ def _clientes(servicios: pd.DataFrame, ops: pd.DataFrame) -> int:
 # Ticket promedio medido en comision
 # ---------------------------------------------------------------------------
 def ticket_promedio_equipos(ops: pd.DataFrame, unidades: pd.DataFrame,
-                            solo_principales: bool = True) -> dict:
-    """Comision cobrada por equipo vendido.
+                            solo_principales: bool = False) -> dict:
+    """Comision generada por equipo vendido.
 
     El divisor son UNIDADES, no operaciones: una venta puede llevar 3 drones y
-    contarla como una sola distorsionaria el ticket. Por defecto solo cuenta
-    Agras T y Mavic, que es lo que el negocio considera "equipo".
+    contarla como una sola distorsionaria el ticket.
+
+    `ticket_generado` (comision total / unidades) es el que se muestra: mide lo
+    que deja cada equipo vendido, se haya cobrado o no. `ticket_cobrado` queda
+    disponible para mirar solo lo que ya entro.
+
+    Las unidades de operaciones devueltas nunca entran: vigentes() las descarta.
     """
     e = vigentes(ops)
     u = con_marca(unidades)

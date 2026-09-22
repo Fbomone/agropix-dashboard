@@ -145,18 +145,47 @@ def test_ticket_de_equipos_divide_por_unidades_no_por_operaciones():
     ])
     t = cm.ticket_promedio_equipos(e, u)
     assert t["cantidad"] == 3
+    assert t["ticket_generado"] == 1000.0
     assert t["ticket_cobrado"] == 1000.0
 
 
-def test_ticket_de_equipos_ignora_accesorios():
+def test_por_defecto_el_ticket_divide_por_todas_las_unidades():
+    """Es el criterio con el que Matias valida contra el Sheet: comision / unidades."""
     e = ops([{"comision": 2000.0, "cobrado": True}])
     u = unidades([
         {"modelo": "T100", "comision": 2000.0},
-        {"modelo": "MIXER JR", "comision": 2000.0},   # accesorio: no es un equipo
+        {"modelo": "MIXER JR", "comision": 2000.0},
+        {"modelo": "RTK", "comision": 2000.0},
+    ])
+    t = cm.ticket_promedio_equipos(e, u)
+    assert t["cantidad"] == 3
+    assert t["ticket_generado"] == pytest.approx(2000 / 3)
+
+
+def test_se_puede_pedir_el_ticket_solo_sobre_drones():
+    e = ops([{"comision": 2000.0, "cobrado": True}])
+    u = unidades([
+        {"modelo": "T100", "comision": 2000.0},
+        {"modelo": "MIXER JR", "comision": 2000.0},   # accesorio, no es un dron
         {"modelo": "RTK", "comision": 2000.0},        # accesorio
     ])
-    assert cm.ticket_promedio_equipos(e, u)["cantidad"] == 1
-    assert cm.ticket_promedio_equipos(e, u, solo_principales=False)["cantidad"] == 3
+    t = cm.ticket_promedio_equipos(e, u, solo_principales=True)
+    assert t["cantidad"] == 1
+    assert t["ticket_generado"] == 2000.0
+
+
+def test_las_unidades_devueltas_nunca_entran_en_el_ticket():
+    """El Sheet cuenta 68 unidades; 3 son de operaciones devueltas."""
+    e = ops([{"comision": 3000.0, "cobrado": True},
+             {"comision": 0.0, "cobrado": False, "estado_cobro": CANCELADO}])
+    u = unidades([
+        {"modelo": "T100", "id_operacion": 1, "comision": 3000.0},
+        {"modelo": "T70", "id_operacion": 1, "comision": 3000.0},
+        {"modelo": "Mavic 3M", "id_operacion": 2, "comision": 0.0, "estado_cobro": CANCELADO},
+    ])
+    t = cm.ticket_promedio_equipos(e, u)
+    assert t["cantidad"] == 2, "la unidad devuelta no se vendio"
+    assert t["ticket_generado"] == 1500.0
 
 
 def test_ticket_de_servicios_y_valor_por_hectarea():

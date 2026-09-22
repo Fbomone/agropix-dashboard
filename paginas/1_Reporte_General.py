@@ -3,8 +3,7 @@ import plotly.express as px
 import streamlit as st
 
 from utils.comisiones import (
-    MARCAS_PRINCIPALES, cobertura_atribucion, comisiones_por_canal, comisiones_por_mes,
-    equipos_por_modelo, kpis_comisiones, ranking_vendedores, ticket_promedio_equipos,
+    MARCAS_PRINCIPALES, cobertura_atribucion, comisiones_por_canal, equipos_por_modelo, kpis_comisiones, ranking_vendedores, ticket_promedio_equipos,
     ticket_promedio_servicios, top_clientes,
 )
 from utils.data import (
@@ -77,7 +76,8 @@ st.markdown("##### 🎯 Desglose por tipo de ingreso")
 te, ts = ticket_promedio_equipos(ops, unidades), ticket_promedio_servicios(servicios)
 metricas([
     dict(label="🚁 Equipos — comisión cobrada", value=formatear_moneda_completa(km["cobrada_equipos"])),
-    dict(label="🚁 Ticket por equipo", value=formatear_moneda_completa(te["ticket_cobrado"])),
+    dict(label="🚁 Equipos — comisión total", value=formatear_moneda_completa(km["generada_equipos"])),
+    dict(label="🚁 Ticket por equipo", value=formatear_moneda_completa(te["ticket_generado"])),
     dict(label="🚁 Volumen intermediado", value=formatear_moneda_completa(km["volumen_equipos"])),
     dict(label="🚜 Servicios — cobrado", value=formatear_moneda_completa(km["cobrado_servicios"])),
     dict(label="🚜 Ticket por trabajo", value=formatear_moneda_completa(ts["ticket"])),
@@ -106,35 +106,6 @@ tab_com, tab_eq, tab_serv = st.tabs(["💰 Ingresos", "🚁 Equipos", "🚜 Serv
 
 # ---------------------------------------------------------------------------
 with tab_com:
-    c1, c2 = st.columns([1, 2])
-    with c1:
-        st.subheader("Estado de cobro")
-        estado = pd.DataFrame({"estado": [COBRADO, POR_COBRAR],
-                               "monto": [km["comision_cobrada"], km["por_cobrar"]]})
-        if hay_datos(estado[estado["monto"] > 0]):
-            fig = px.pie(estado[estado["monto"] > 0], values="monto", names="estado", hole=0.5,
-                         color="estado", color_discrete_map=COLORES_COBRO,
-                         category_orders={"estado": [COBRADO, POR_COBRAR]})
-            fig.update_traces(sort=False, texttemplate=f"%{{percent:.1%}}<br>%{{value:{ETIQUETA_MONEDA}}}",
-                              hovertemplate=f"%{{label}}<br>%{{value:{HOVER_MONEDA}}} (%{{percent:.1%}})<extra></extra>")
-            grafico(fig, key="estado_comisiones", eje_moneda=None)
-
-    with c2:
-        st.subheader("Cobrado y por cobrar (mensual)")
-        mensual = comisiones_por_mes(servicios, ops)
-        if hay_datos(mensual):
-            largo = mensual.melt(id_vars="mes", value_vars=["cobrada", "por_cobrar"],
-                                 var_name="estado", value_name="monto")
-            largo["estado"] = largo["estado"].map({"cobrada": COBRADO, "por_cobrar": POR_COBRAR})
-            fig = px.bar(largo, x="mes", y="monto", color="estado", color_discrete_map=COLORES_COBRO,
-                         category_orders={"estado": [COBRADO, POR_COBRAR]},
-                         labels={"mes": "", "monto": "US$", "estado": ""})
-            fig.update_traces(
-                hovertemplate=f"%{{fullData.name}} · %{{x|%m/%Y}}<br>%{{y:{HOVER_MONEDA}}}<extra></extra>")
-            fig.update_xaxes(tickformat=MES_PLOTLY)
-            grafico(fig, key="comisiones_mensuales")
-
-    st.divider()
     # De aca para abajo si manda la granularidad: el donut y la serie mensual de
     # arriba tienen su propio corte y no la usan.
     st.segmented_control("Granularidad", list(GRANULARIDADES), key="granularidad")

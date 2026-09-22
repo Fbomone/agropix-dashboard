@@ -918,13 +918,26 @@ def ticket_por_mes(unif: pd.DataFrame) -> pd.DataFrame:
 
 
 def kpis_servicios(servicios: pd.DataFrame, solo_vigentes: bool = True) -> dict:
-    """solo_vigentes=False respeta tal cual el filtro de estado elegido (incluso cancelados)."""
+    """solo_vigentes=False respeta tal cual el filtro de estado elegido (incluso cancelados).
+
+    `trabajos` es el divisor del ticket: los trabajos con monto cargado. Los que
+    todavia no lo tienen (hoy 8, ver las alertas de Configuracion) quedan fuera
+    del promedio; contarlos como $0 lo hundiria sin que haya bajado ninguna
+    tarifa. `trabajos_totales` los incluye, para poder ver la diferencia.
+    """
     v = vigentes(servicios) if solo_vigentes else servicios
+    con_monto = v[v["monto"] > 0]
+    ventas = float(v["monto"].sum())
     return {
-        "ventas": float(v["monto"].sum()),
+        "ventas": ventas,
         "hectareas": float(v["hectareas"].sum()),
-        "clientes": clientes_unicos(v.loc[v["monto"] > 0, "cliente"]),
-        "ticket_promedio": ticket_promedio(v["monto"]),
+        # Todos los clientes con un trabajo, tenga o no el monto cargado: si no,
+        # un cliente desaparece del KPI solo porque falta cargarle el importe
+        "clientes": clientes_unicos(v["cliente"]),
+        "trabajos": int(len(con_monto)),
+        "trabajos_totales": int(len(v)),
+        "trabajos_sin_monto": int(len(v) - len(con_monto)),
+        "ticket_promedio": ventas / len(con_monto) if len(con_monto) else 0.0,
     }
 
 
