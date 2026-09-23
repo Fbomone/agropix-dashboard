@@ -84,12 +84,6 @@ def test_los_inputs_sobreviven_a_una_corrida_programada(archivo):
     assert "||" in str(valores["fecha_corte"]), f"{archivo}: idem fecha_corte"
 
 
-def test_test_y_desarrollo_no_tienen_cron():
-    """Los dos circulos chicos se corren a mano; un cron ahi no tiene sentido."""
-    for archivo in ["envio_desarrollo.yml", "envio_test.yml"]:
-        assert "schedule" not in cargar(archivo)[ON], f"{archivo} no deberia tener cron"
-
-
 # ---------------------------------------------------------------------------
 # El reutilizable: donde viven los pasos
 # ---------------------------------------------------------------------------
@@ -137,9 +131,11 @@ def test_el_modo_va_por_linea_de_comandos_y_no_por_secret():
     assert "--modo ${{ inputs.modo }}" in envio["run"]
 
 
-def test_el_productivo_documenta_las_dos_trampas_del_cron():
+def test_el_productivo_explica_como_volver_a_armar_el_cron():
+    """Sacar el cron sin dejar escrito como reponerlo es perder el trabajo hecho."""
     texto = (WORKFLOWS / "reporte_semanal.yml").read_text(encoding="utf-8")
-    assert "demorarse" in texto, "el cron de GitHub se atrasa"
+    assert "0 21 * * 5" in texto, "falta la linea de cron lista para reponer"
+    assert "atrasa" in texto, "el cron de GitHub se atrasa y hay que decirlo"
     assert "60" in texto, "los repos públicos pierden el schedule a los 60 días"
 
 

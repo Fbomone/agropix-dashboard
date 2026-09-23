@@ -1,23 +1,37 @@
 name: 3 · Reporte semanal — todos (PRODUCTIVO)
 
-# El envio real, a los 6 destinatarios. Viernes 18:00 ART = 21:00 UTC.
+# El envio real, a los 6 destinatarios. El asunto va sin prefijo.
+#
+# SOLO MANUAL, por decision del 23/09/2026.
+# ---------------------------------------------------------------------------
+# Tuvo un cron para los viernes a las 18:00 y se quito despues del ensayo del
+# 22/09, que fallo con "No jobs were run". Ese fallo ya esta arreglado (ver
+# `dry_run: ${{ inputs.dry_run || false }}` mas abajo), pero el envio queda a
+# mano hasta que se decida lo contrario: son 6 personas y conviene mirar los
+# numeros antes de que salgan.
+#
+# Para volver a armarlo, alcanza con reponer estas dos lineas arriba de
+# `workflow_dispatch:` y correr los tests:
+#
+#   schedule:
+#     - cron: "0 21 * * 5"     # viernes 21:00 UTC = 18:00 en Argentina
+#
 # Argentina usa UTC-3 todo el año (no mueve los relojes desde 2009), asi que el
 # horario no se corre en verano.
 #
-# El periodo va de viernes a viernes, ambos inclusive: el envio del viernes
-# 25/09 cubre del 18/09 al 25/09. Lo calcula semana_reporte() en hora de
-# Argentina, no con la UTC del runner.
-#
-# OJO con el cron de GitHub:
-#  - Puede demorarse entre 5 y 30 minutos en horarios de carga, y en casos
-#    extremos saltear una corrida. Si el reporte llega 18:25, es normal. Por eso
-#    el periodo se calcula sobre el viernes mas reciente: aunque el job corra el
-#    sabado, sigue reportando la misma semana.
+# Y con dos advertencias que conviene tener presentes antes de hacerlo:
+#  - El cron de GitHub se atrasa. Lo normal son 5 a 30 minutos; el ensayo del
+#    22/09 salio con mas de 4 horas de atraso. El periodo del reporte se calcula
+#    sobre el viernes mas reciente, asi que los numeros no cambian aunque el job
+#    corra el sabado, pero la hora de llegada no esta garantizada.
 #  - En repos PUBLICOS, GitHub deshabilita los workflows programados tras 60
 #    dias sin commits. Este repo es privado, asi que hoy no aplica.
+#
+# El periodo va de viernes a viernes, ambos inclusive: el envio del viernes
+# 25/09 cubre del 18/09 al 25/09. Lo calcula semana_reporte() en hora de
+# Argentina, no con la UTC del runner, asi que correrlo a mano un sabado sigue
+# reportando la semana que cerro el viernes.
 on:
-  schedule:
-    - cron: "0 21 * * 5"
   workflow_dispatch:
     inputs:
       fecha_corte:
@@ -42,8 +56,9 @@ jobs:
       # formulario que completar. `dry_run` llegaria como cadena vacia a un
       # input declarado boolean y el job no arranca ("No jobs were run").
       # El `|| false` lo convierte en un booleano de verdad en los dos casos.
+      # Se deja puesto aunque hoy no haya cron: es la red para cuando vuelva.
       fecha_corte: ${{ inputs.fecha_corte || '' }}
       dry_run: ${{ inputs.dry_run || false }}
-      # Si lo dispara el cron queda como AUTOMATICO en el historial; si lo
-      # corre alguien a mano, como MANUAL
+      # Si algun dia lo dispara el cron queda como AUTOMATICO en el historial;
+      # corrido a mano, como MANUAL
       tipo_historial: ${{ github.event_name == 'schedule' && 'AUTOMATICO' || 'MANUAL' }}
