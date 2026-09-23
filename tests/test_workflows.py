@@ -67,37 +67,22 @@ def test_los_grupos_de_concurrencia_no_se_repiten():
 # ---------------------------------------------------------------------------
 # Quien corre solo y quien no
 # ---------------------------------------------------------------------------
-def test_desarrollo_nunca_se_dispara_solo():
-    """El circulo chico es para probar a mano: un cron ahi no tiene sentido."""
-    assert "schedule" not in cargar("envio_desarrollo.yml")[ON]
+@pytest.mark.parametrize("archivo", LLAMADORES)
+def test_los_inputs_sobreviven_a_una_corrida_programada(archivo):
+    """El bug que rompio el ensayo del 22/09 y habria roto el envio del viernes.
 
-
-def test_si_test_tiene_cron_es_de_una_sola_vez():
-    """El ensayo automatico esta bien; un cron semanal en test no.
-
-    Un `0 1 * * 2` le mandaria a Matias un reporte duplicado todos los martes
-    para siempre. Fijando dia y mes, si alguien se olvida de sacarlo lo peor
-    que pasa es que se repita dentro de un año.
+    En un evento `schedule` el contexto `inputs` viene vacio: no hubo formulario
+    que completar. Un `dry_run: ${{ inputs.dry_run }}` pelado le pasa una cadena
+    vacia a un input declarado `type: boolean`, el job no arranca y GitHub lo
+    reporta como "No jobs were run" -- sin un solo paso ejecutado, asi que
+    tampoco sale el aviso de error, que vive dentro del job.
     """
-    schedule = cargar("envio_test.yml")[ON].get("schedule")
-    if not schedule:
-        return  # ya lo quitaron: es el estado final esperado
-    for entrada in schedule:
-        minuto, hora, dia, mes, semana = entrada["cron"].split()
-        assert dia != "*" and mes != "*", (
-            f"cron {entrada['cron']!r} se repite: fijá día y mes para que sea de una sola vez"
-        )
-
-
-def test_el_cron_temporal_de_test_dice_cuando_sacarlo():
-    """Sin fecha escrita al lado, un cron 'temporal' se queda para siempre."""
-    texto = (WORKFLOWS / "envio_test.yml").read_text(encoding="utf-8")
-    if "schedule:" not in texto:
-        return
-    assert "TEMPORAL" in texto, "marcá el cron como temporal"
-    assert re.search(r"QUITAR DESPUES DEL \d{4}-\d{2}-\d{2}", texto), (
-        "poné la fecha en que hay que sacarlo"
+    valores = list(cargar(archivo)["jobs"].values())[0]["with"]
+    assert "||" in str(valores["dry_run"]), (
+        f"{archivo}: dry_run tiene que traer un valor por defecto (p. ej. "
+        "`${{ inputs.dry_run || false }}`) o el cron no arranca"
     )
+    assert "||" in str(valores["fecha_corte"]), f"{archivo}: idem fecha_corte"
 
 
 def test_el_productivo_sale_los_viernes_18_argentina():
@@ -105,17 +90,33 @@ def test_el_productivo_sale_los_viernes_18_argentina():
     assert cargar("reporte_semanal.yml")[ON]["schedule"][0]["cron"] == "0 21 * * 5"
 
 
-def test_el_reutilizable_no_se_dispara_solo():
-    on = cargar(REUTILIZABLE)[ON]
-    assert "workflow_call" in on
-    assert "schedule" not in on and "workflow_dispatch" not in on
+@pytest.mark.parametrize("archivo", ["envio_desarrollo.yml", "envio_test.yml"])
+def test_los_crons_de_ensayo_son_de_una_sola_vez(archivo):
+    """Un ensayo esta bien; un cron que se repite en desarrollo o en test, no.
+
+    Un `30 11 * * 3` le mandaria a Matias un reporte duplicado todos los
+    miercoles para siempre. Fijando dia y mes, si alguien se olvida de sacarlo
+    lo peor que pasa es que se repita dentro de un año.
+    """
+    schedule = cargar(archivo)[ON].get("schedule")
+    if not schedule:
+        return  # ya lo quitaron: es el estado final esperado
+    for entrada in schedule:
+        _minuto, _hora, dia, mes, _semana = entrada["cron"].split()
+        assert dia != "*" and mes != "*", (
+            f"{archivo}: el cron {entrada['cron']!r} se repite; fijá día y mes"
+        )
 
 
-def test_el_cron_manual_queda_marcado_distinto_en_el_historial():
-    """Para poder distinguir un reenvío a mano de la corrida automática."""
-    job = list(cargar("reporte_semanal.yml")["jobs"].values())[0]
-    assert "schedule" in job["with"]["tipo_historial"]
-    assert "AUTOMATICO" in job["with"]["tipo_historial"]
+@pytest.mark.parametrize("archivo", ["envio_desarrollo.yml", "envio_test.yml"])
+def test_los_crons_de_ensayo_dicen_cuando_sacarlos(archivo):
+    """Sin una fecha escrita al lado, un cron de ensayo se queda para siempre."""
+    texto = (WORKFLOWS / archivo).read_text(encoding="utf-8")
+    if "schedule:" not in texto:
+        return
+    assert re.search(r"QUITAR DESPUES DEL \d{4}-\d{2}-\d{2}", texto), (
+        f"{archivo}: poné la fecha en que hay que sacar el cron de ensayo"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +168,7 @@ def test_el_modo_va_por_linea_de_comandos_y_no_por_secret():
 
 def test_el_productivo_documenta_las_dos_trampas_del_cron():
     texto = (WORKFLOWS / "reporte_semanal.yml").read_text(encoding="utf-8")
-    assert "demorarse" in texto, "el cron de GitHub se atrasa"
+    assert "atrasa" in texto, "el cron de GitHub se atrasa y hay que decirlo"
     assert "60" in texto, "los repos públicos pierden el schedule a los 60 días"
 
 

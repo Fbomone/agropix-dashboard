@@ -4,8 +4,23 @@ name: 1 · Desarrollo — solo Franco
 # Es para probar lo que sea —un cambio en el mail, en el PDF, en los numeros—
 # sin que le llegue a nadie mas. El asunto va prefijado con [DEV].
 #
-# Solo manual: no tiene schedule a proposito.
+# ---------------------------------------------------------------------------
+# CRON DE ENSAYO — QUITAR DESPUES DEL 2026-09-23
+# ---------------------------------------------------------------------------
+# Disparo automatico de una sola vez, hoy 23/09 a las 08:30 ART, para ver los
+# dos circulos chicos salir solos antes de confiarle el productivo al cron del
+# viernes. El ensayo del 22/09 fallo por los inputs vacios; ese defecto ya esta
+# arreglado y esto lo comprueba.
+#
+# 30 11 23 9 * = 23/09 11:30 UTC = 23/09 08:30 en Argentina (UTC-3).
+#
+# Dia y mes fijos a proposito: si alguien se olvida de sacarlo, lo peor que
+# pasa es que se repita dentro de un año, no todas las semanas.
+#
+# Cuando el ensayo salga bien, borrar el bloque `schedule:` entero.
 on:
+  schedule:
+    - cron: "30 11 23 9 *"
   workflow_dispatch:
     inputs:
       fecha_corte:
@@ -26,6 +41,10 @@ jobs:
     secrets: inherit
     with:
       modo: desarrollo
-      fecha_corte: ${{ inputs.fecha_corte }}
-      dry_run: ${{ inputs.dry_run }}
+      # En un evento `schedule` el contexto `inputs` viene vacio: no hubo
+      # formulario que completar. `dry_run` llegaria como cadena vacia a un
+      # input declarado boolean y el job no arranca ("No jobs were run").
+      # El `|| false` lo convierte en un booleano de verdad en los dos casos.
+      fecha_corte: ${{ inputs.fecha_corte || '' }}
+      dry_run: ${{ inputs.dry_run || false }}
       tipo_historial: PRUEBA
