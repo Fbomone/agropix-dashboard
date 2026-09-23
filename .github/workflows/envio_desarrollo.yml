@@ -26,6 +26,10 @@ jobs:
     secrets: inherit
     with:
       modo: desarrollo
-      fecha_corte: ${{ inputs.fecha_corte }}
-      dry_run: ${{ inputs.dry_run }}
+      # En un evento `schedule` el contexto `inputs` viene vacio: no hubo
+      # formulario que completar. `dry_run` llegaria como cadena vacia a un
+      # input declarado boolean y el job no arranca ("No jobs were run").
+      # El `|| false` lo convierte en un booleano de verdad en los dos casos.
+      fecha_corte: ${{ inputs.fecha_corte || '' }}
+      dry_run: ${{ inputs.dry_run || false }}
       tipo_historial: PRUEBA
