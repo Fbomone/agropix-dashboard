@@ -2,16 +2,35 @@ name: 3 · Reporte semanal — todos (PRODUCTIVO)
 
 # El envio real, a los 6 destinatarios. El asunto va sin prefijo.
 #
-# AUTOMATICO: viernes 18:00 en Argentina.
+# SOLO MANUAL, por decision del 23/09/2026.
 # ---------------------------------------------------------------------------
-# Argentina usa UTC-3 todo el año (no mueve los relojes desde 2009), asi que el
-# horario no se corre en verano.
+# Se intento dos veces dejarlo automatico y las dos fallaron, por motivos
+# distintos:
 #
-# Dos cosas que conviene tener presentes:
-#  - El cron de GitHub se atrasa. Lo normal son 5 a 30 minutos; el ensayo del
-#    22/09 salio con mas de 4 horas de atraso. El periodo se calcula sobre el
-#    viernes mas reciente, asi que los numeros no cambian aunque el job corra el
-#    sabado, pero la hora de llegada no esta garantizada.
+#  - 22/09 22:00: el cron disparo pero el job no arranco, porque en un evento
+#    `schedule` el contexto `inputs` viene vacio y `dry_run` llegaba como cadena
+#    vacia a un input boolean. Eso esta arreglado (ver el `|| false` mas abajo).
+#  - 23/09 08:30: el cron directamente no disparo. Llego a la rama por defecto
+#    27 minutos antes de su horario, y GitHub no lo registro a tiempo.
+#
+# Los dos ensayos usaban un cron de una sola vez (dia y mes fijos). Para probar
+# el planificador de GitHub eso es lo peor que se puede elegir: si la unica
+# ventana se pierde, no hay segundo intento. Un cron semanal, registrado con
+# dias de anticipacion, es otra situacion -- pero comprobarlo cuesta una semana
+# por intento, y mientras tanto hay seis personas esperando el reporte.
+#
+# Asi que el envio queda a mano. Es una decision de confiabilidad, no una
+# limitacion tecnica: apretar el boton tarda diez segundos y sale siempre.
+#
+# Para volver a automatizarlo, reponer estas dos lineas arriba de
+# `workflow_dispatch:` con varios dias de anticipacion, nunca el mismo dia:
+#
+#   schedule:
+#     - cron: "0 21 * * 5"     # viernes 21:00 UTC = 18:00 en Argentina
+#
+# Argentina usa UTC-3 todo el año (no mueve los relojes desde 2009), asi que el
+# horario no se corre en verano. Dos advertencias antes de hacerlo:
+#  - El cron de GitHub se atrasa; lo normal son 5 a 30 minutos.
 #  - En repos PUBLICOS, GitHub deshabilita los workflows programados tras 60
 #    dias sin commits. Este repo es privado, asi que hoy no aplica.
 #
@@ -20,8 +39,6 @@ name: 3 · Reporte semanal — todos (PRODUCTIVO)
 # Argentina, no con la UTC del runner, asi que correrlo a mano un sabado sigue
 # reportando la semana que cerro el viernes.
 on:
-  schedule:
-    - cron: "0 21 * * 5"
   workflow_dispatch:
     inputs:
       fecha_corte:
@@ -46,6 +63,7 @@ jobs:
       # formulario que completar. `dry_run` llegaria como cadena vacia a un
       # input declarado boolean y el job no arranca ("No jobs were run").
       # El `|| false` lo convierte en un booleano de verdad en los dos casos.
+      # Se deja puesto aunque hoy no haya cron: es la red para cuando vuelva.
       fecha_corte: ${{ inputs.fecha_corte || '' }}
       dry_run: ${{ inputs.dry_run || false }}
       # Si lo dispara el cron queda como AUTOMATICO en el historial; si lo

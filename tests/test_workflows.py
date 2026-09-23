@@ -4,7 +4,6 @@ Un error acá no lo agarra ningún linter de Python y recién se ve cuando la
 corrida falla — que en el caso del productivo sería un viernes a la tarde, con
 el reporte sin salir y nadie mirando.
 """
-import re
 from pathlib import Path
 
 import pytest
@@ -85,39 +84,28 @@ def test_los_inputs_sobreviven_a_una_corrida_programada(archivo):
     assert "||" in str(valores["fecha_corte"]), f"{archivo}: idem fecha_corte"
 
 
-def test_el_productivo_sale_los_viernes_18_argentina():
-    """0 21 * * 5 = viernes 21:00 UTC = 18:00 ART (Argentina es UTC-3 todo el año)."""
-    assert cargar("reporte_semanal.yml")[ON]["schedule"][0]["cron"] == "0 21 * * 5"
+def test_ningun_envio_se_dispara_solo():
+    """Decision del 23/09: los tres se corren a mano.
 
+    Se intento dos veces dejar el productivo automatico. La primera el job no
+    arranco por los inputs vacios (arreglado, ver el test de arriba); la segunda
+    el cron directamente no disparo, porque llego a la rama por defecto 27
+    minutos antes de su horario.
 
-@pytest.mark.parametrize("archivo", ["envio_desarrollo.yml", "envio_test.yml"])
-def test_los_crons_de_ensayo_son_de_una_sola_vez(archivo):
-    """Un ensayo esta bien; un cron que se repite en desarrollo o en test, no.
-
-    Un `30 11 * * 3` le mandaria a Matias un reporte duplicado todos los
-    miercoles para siempre. Fijando dia y mes, si alguien se olvida de sacarlo
-    lo peor que pasa es que se repita dentro de un año.
+    Si alguien repone un cron, el test de inputs sigue cuidando que arranque.
+    Este deja asentado que hoy no hay ninguno, para que reponerlo sea un acto
+    deliberado y no un descuido.
     """
-    schedule = cargar(archivo)[ON].get("schedule")
-    if not schedule:
-        return  # ya lo quitaron: es el estado final esperado
-    for entrada in schedule:
-        _minuto, _hora, dia, mes, _semana = entrada["cron"].split()
-        assert dia != "*" and mes != "*", (
-            f"{archivo}: el cron {entrada['cron']!r} se repite; fijá día y mes"
-        )
+    for archivo in LLAMADORES:
+        assert "schedule" not in cargar(archivo)[ON], f"{archivo} tiene un cron"
 
 
-@pytest.mark.parametrize("archivo", ["envio_desarrollo.yml", "envio_test.yml"])
-def test_los_crons_de_ensayo_dicen_cuando_sacarlos(archivo):
-    """Sin una fecha escrita al lado, un cron de ensayo se queda para siempre."""
-    texto = (WORKFLOWS / archivo).read_text(encoding="utf-8")
-    if "schedule:" not in texto:
-        return
-    assert re.search(r"QUITAR DESPUES DEL \d{4}-\d{2}-\d{2}", texto), (
-        f"{archivo}: poné la fecha en que hay que sacar el cron de ensayo"
-    )
-
+def test_el_productivo_deja_escrito_como_volver_a_automatizarlo():
+    """Sacar el cron sin dejar escrito como reponerlo es perder el trabajo hecho."""
+    texto = (WORKFLOWS / "reporte_semanal.yml").read_text(encoding="utf-8")
+    assert "0 21 * * 5" in texto, "falta la linea de cron lista para reponer"
+    assert "anticipacion" in texto, "hay que avisar que no se repone el mismo dia"
+    assert "60" in texto, "los repos públicos pierden el schedule a los 60 días"
 
 # ---------------------------------------------------------------------------
 # El reutilizable: donde viven los pasos
@@ -164,12 +152,6 @@ def test_el_modo_va_por_linea_de_comandos_y_no_por_secret():
     """Un secret mal cargado no puede convertir una prueba en un envío a todos."""
     envio = next(p for p in pasos(cargar(REUTILIZABLE)) if "Enviar reporte" in p.get("name", ""))
     assert "--modo ${{ inputs.modo }}" in envio["run"]
-
-
-def test_el_productivo_documenta_las_dos_trampas_del_cron():
-    texto = (WORKFLOWS / "reporte_semanal.yml").read_text(encoding="utf-8")
-    assert "atrasa" in texto, "el cron de GitHub se atrasa y hay que decirlo"
-    assert "60" in texto, "los repos públicos pierden el schedule a los 60 días"
 
 
 # ---------------------------------------------------------------------------
