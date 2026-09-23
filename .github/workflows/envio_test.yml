@@ -4,10 +4,23 @@ name: 2 · Test — Franco y Matías
 # [PRUEBA]. Es el paso previo al envio real: si el mail se ve bien para los dos,
 # ya se puede mandar a todo el equipo.
 #
-# Solo manual: no tiene schedule a proposito. Tuvo uno temporal el 22/09 para
-# ensayar el disparo automatico; ese ensayo encontro el bug de los inputs
-# vacios que esta arreglado mas abajo, y despues se quito.
+# ---------------------------------------------------------------------------
+# CRON DE ENSAYO — QUITAR DESPUES DEL 2026-09-23
+# ---------------------------------------------------------------------------
+# Disparo automatico de una sola vez, hoy 23/09 a las 08:30 ART, para ver los
+# dos circulos chicos salir solos antes de confiarle el productivo al cron del
+# viernes. El ensayo del 22/09 fallo por los inputs vacios; ese defecto ya esta
+# arreglado y esto lo comprueba.
+#
+# 30 11 23 9 * = 23/09 11:30 UTC = 23/09 08:30 en Argentina (UTC-3).
+#
+# Dia y mes fijos a proposito: si alguien se olvida de sacarlo, lo peor que
+# pasa es que se repita dentro de un año, no todas las semanas.
+#
+# Cuando el ensayo salga bien, borrar el bloque `schedule:` entero.
 on:
+  schedule:
+    - cron: "30 11 23 9 *"
   workflow_dispatch:
     inputs:
       fecha_corte:
