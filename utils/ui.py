@@ -89,10 +89,22 @@ def _cantidad_series(fig) -> int:
     return n
 
 
-def espacio_para_etiquetas(fig, maximo: float, eje: str = "x"):
-    """Deja aire despues de la barra mas larga para que la etiqueta 'outside' no se corte."""
+# Aire por caracter de la etiqueta, en fraccion del rango del eje. Sale de medir
+# el caso peor: una barra que ocupa todo el ancho con el rotulo mas largo al
+# lado. Plotly dibuja la etiqueta "outside" aunque no entre (cliponaxis=False),
+# y lo que sobra lo recorta el contenedor: el texto no se encoge, desaparece.
+AIRE_POR_CARACTER = 0.04
+
+
+def espacio_para_etiquetas(fig, maximo: float, eje: str = "x", caracteres: int = 6):
+    """Deja aire despues de la barra mas larga para que la etiqueta 'outside' no se corte.
+
+    `caracteres` es el largo estimado del rotulo: "$193k" son 5 y "6,46k ha"
+    son 8. Con un factor fijo, agregarle un sufijo a la etiqueta corta el
+    sufijo, que es justo la parte que dice en que unidad esta el numero.
+    """
     if maximo and maximo > 0:
-        rango = [0, float(maximo) * 1.18]
+        rango = [0, float(maximo) * (1 + AIRE_POR_CARACTER * max(caracteres, 5))]
         fig.update_xaxes(range=rango) if eje == "x" else fig.update_yaxes(range=rango)
 
 
@@ -163,7 +175,8 @@ def barras_por(df: pd.DataFrame, columna: str, medida: Medida = MEDIDA_PLATA,
             texttemplate=f"%{{y:{medida.texto}}}{medida.sufijo}",
             hovertemplate=f"%{{x}}<br>%{{y:{medida.hover}}}{medida.sufijo}<extra></extra>")
     fig.update_traces(marker_color=color, textposition="outside", cliponaxis=False)
-    espacio_para_etiquetas(fig, g[valor].max(), eje=eje)
+    # "$1,25M" son 6 caracteres; "1,25M ha", 8. El sufijo cambia cuanto aire hace falta
+    espacio_para_etiquetas(fig, g[valor].max(), eje=eje, caracteres=6 + len(medida.sufijo))
     # El tickformat lo pone la medida, asi que grafico() no tiene que adivinarlo
     (fig.update_xaxes if horizontal else fig.update_yaxes)(tickformat=medida.tick)
     # key explicita: dos graficos con los mismos datos chocarian en el ID automatico

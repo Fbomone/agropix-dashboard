@@ -117,6 +117,39 @@ def test_el_vertical_tambien_respeta_la_medida(capturado, medida):
 
 
 # ---------------------------------------------------------------------------
+# Que la etiqueta entre
+# ---------------------------------------------------------------------------
+def rango_del_eje(fig, horizontal=True):
+    eje = fig.layout.xaxis if horizontal else fig.layout.yaxis
+    return eje.range
+
+
+def test_en_hectareas_queda_mas_aire_que_en_plata(capturado):
+    """El rotulo "6,46k ha" ocupa mas que "$6,46k" y necesita mas lugar al lado."""
+    ui.barras_por(TRABAJOS, "cliente", MEDIDA_PLATA, horizontal=True)
+    aire_plata = rango_del_eje(capturado.ultima)[1] / 100_000.0
+    ui.barras_por(TRABAJOS, "cliente", MEDIDA_SUPERFICIE, horizontal=True)
+    aire_has = rango_del_eje(capturado.ultima)[1] / 4_000.0
+    assert aire_has > aire_plata, "el sufijo ' ha' necesita mas aire y no lo esta pidiendo"
+
+
+@pytest.mark.parametrize("medida", list(MEDIDAS.values()))
+@pytest.mark.parametrize("horizontal", [True, False])
+def test_la_barra_mas_larga_nunca_llega_al_borde(capturado, medida, horizontal):
+    """Si la barra toca el borde, Plotly dibuja la etiqueta afuera y se recorta.
+
+    Es el bug que se vio en Por trabajo: "6,46k ha" aparecia como "6,46k".
+    """
+    ui.barras_por(TRABAJOS, "cliente", medida, horizontal=horizontal)
+    maximo = TRABAJOS[medida.columna].groupby(TRABAJOS["cliente"]).sum().max()
+    tope = rango_del_eje(capturado.ultima, horizontal)[1]
+    ocupado = maximo / tope
+    assert ocupado < 0.85, (
+        f"{medida.etiqueta}: la barra ocupa el {ocupado:.0%} del eje y el rótulo no entra"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Bordes
 # ---------------------------------------------------------------------------
 def test_sin_la_columna_de_la_medida_no_revienta(capturado):
