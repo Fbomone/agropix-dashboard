@@ -1,4 +1,6 @@
 """Formato visual comun: numeros en es-AR, paleta fija y convenciones de graficos."""
+from dataclasses import dataclass
+
 import pandas as pd
 
 from utils.data import CANCELADO, COBRADO, EN_PROCESO, EQUIPOS, POR_COBRAR, SERVICIO
@@ -39,9 +41,41 @@ HOVER_MONEDA = "$,.2f"
 TICK_MONEDA = "$,.3~s"
 ETIQUETA_MONEDA = "$,.3s"  # texto sobre barras / porciones: "$383k"
 FORMATO_MONEDA_TABLA = "US$ %,.0f"
+
+# Las hectareas siguen las mismas convenciones que la plata: eje y etiqueta
+# abreviados ("16,5k"), tooltip con el numero exacto. Sin "$" y con " ha".
+TICK_HAS = ",.3~s"
+ETIQUETA_HAS = ",.3s"
+HOVER_HAS = ",.1f"
+
 FECHA_PLOTLY = "%d/%m/%Y"
 MES_PLOTLY = "%m/%Y"
 FECHA_CORTA_PLOTLY = "%d/%m"  # eje semanal: la etiqueta es el lunes de la semana
+
+
+# ---------------------------------------------------------------------------
+# Unidad de medida de un grafico de barras
+# ---------------------------------------------------------------------------
+# Los mismos cuatro cortes de Venta de Servicios (producto, trabajo, cultivo,
+# cliente) se leen distinto segun lo que se mida. Un cliente puede ser el que
+# mas factura y no el que mas superficie da: un ensayo caro en pocas hectareas
+# contra una pulverizacion grande a tarifa baja. Por eso el grafico no fija la
+# magnitud, la recibe.
+@dataclass(frozen=True)
+class Medida:
+    columna: str    # de donde sale el valor en el DataFrame
+    etiqueta: str   # como se llama el eje
+    tick: str       # formato de los ticks del eje
+    texto: str      # formato del numero sobre la barra
+    hover: str      # formato del numero exacto en el tooltip
+    sufijo: str = ""
+
+
+MEDIDA_PLATA = Medida("monto", "US$", TICK_MONEDA, ETIQUETA_MONEDA, HOVER_MONEDA)
+MEDIDA_SUPERFICIE = Medida("hectareas", "Has", TICK_HAS, ETIQUETA_HAS, HOVER_HAS, sufijo=" ha")
+
+# El orden manda en el selector; la plata va primero porque es el default
+MEDIDAS: dict[str, Medida] = {"US$": MEDIDA_PLATA, "Hectáreas": MEDIDA_SUPERFICIE}
 
 # ---------------------------------------------------------------------------
 # Numeros

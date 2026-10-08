@@ -6,8 +6,8 @@ import plotly.express as px
 import streamlit as st
 
 from utils.format import (
-    ALTO_GRAFICO, AMBAR, AZUL, ETIQUETA_MONEDA, FORMATO_MONEDA_TABLA, GRADIENTES_KPI, GRIS,
-    HOVER_MONEDA, PLOTLY_TEMPLATE, SEPARADORES_PLOTLY, TICK_MONEDA, VERDE,
+    ALTO_GRAFICO, AMBAR, AZUL, FORMATO_MONEDA_TABLA, GRADIENTES_KPI, GRIS, MEDIDA_PLATA,
+    MEDIDAS, PLOTLY_TEMPLATE, SEPARADORES_PLOTLY, TICK_MONEDA, VERDE, Medida,
 )
 
 SIN_DATOS = "No hay datos para el período seleccionado"
@@ -117,11 +117,24 @@ def grafico(fig, key: str, eje_moneda: str | None = "y", alto: int = ALTO_GRAFIC
     st.plotly_chart(fig, width="stretch", key=key, config={"displaylogo": False})
 
 
-def barras_por(df: pd.DataFrame, columna: str, valor: str = "monto", horizontal: bool = False,
-               top: int | None = None, color: str = VERDE):
-    """Suma `valor` por `columna`, de mayor a menor. Horizontal: el mayor queda arriba."""
-    if not hay_datos(df):
+def selector_medida(key: str, etiqueta: str = "Unidad de medida") -> Medida:
+    """Segmentado US$ / Hectareas. Devuelve la Medida elegida, plata por defecto.
+
+    Streamlit borra el estado de un widget al cambiar de pagina, asi que el
+    selector vuelve solo a US$ cuando se sale y se entra. Es lo que conviene:
+    el default tiene que ser siempre el mismo para que nadie lea hectareas
+    creyendo que lee plata.
+    """
+    elegida = st.segmented_control(etiqueta, list(MEDIDAS), default=list(MEDIDAS)[0], key=key)
+    return MEDIDAS.get(elegida or "", MEDIDA_PLATA)
+
+
+def barras_por(df: pd.DataFrame, columna: str, medida: Medida = MEDIDA_PLATA,
+               horizontal: bool = False, top: int | None = None, color: str = VERDE):
+    """Suma la medida por `columna`, de mayor a menor. Horizontal: el mayor queda arriba."""
+    if not hay_datos(df) or medida.columna not in df.columns:
         return
+    valor = medida.columna
     g = (
         df.assign(**{columna: df[columna].astype("string").fillna("Sin dato")})
         .groupby(columna, as_index=False)[valor].sum()
@@ -132,23 +145,29 @@ def barras_por(df: pd.DataFrame, columna: str, valor: str = "monto", horizontal:
     if top:
         g = g.head(top)
     if not hay_datos(g):
+        st.caption(f"Ningún registro tiene {medida.etiqueta.lower()} cargado en este período.")
         return
 
-    labels = {valor: "US$", columna: ""}
+    labels = {valor: medida.etiqueta, columna: ""}
+    eje = "x" if horizontal else "y"
     if horizontal:
         fig = px.bar(g, x=valor, y=columna, orientation="h", labels=labels)
         fig.update_yaxes(categoryorder="total ascending")
-        fig.update_traces(texttemplate=f"%{{x:{ETIQUETA_MONEDA}}}",
-                          hovertemplate=f"%{{y}}<br>%{{x:{HOVER_MONEDA}}}<extra></extra>")
+        fig.update_traces(
+            texttemplate=f"%{{x:{medida.texto}}}{medida.sufijo}",
+            hovertemplate=f"%{{y}}<br>%{{x:{medida.hover}}}{medida.sufijo}<extra></extra>")
     else:
         fig = px.bar(g, x=columna, y=valor, labels=labels)
         fig.update_xaxes(categoryorder="total descending")
-        fig.update_traces(texttemplate=f"%{{y:{ETIQUETA_MONEDA}}}",
-                          hovertemplate=f"%{{x}}<br>%{{y:{HOVER_MONEDA}}}<extra></extra>")
+        fig.update_traces(
+            texttemplate=f"%{{y:{medida.texto}}}{medida.sufijo}",
+            hovertemplate=f"%{{x}}<br>%{{y:{medida.hover}}}{medida.sufijo}<extra></extra>")
     fig.update_traces(marker_color=color, textposition="outside", cliponaxis=False)
-    espacio_para_etiquetas(fig, g[valor].max(), eje="x" if horizontal else "y")
+    espacio_para_etiquetas(fig, g[valor].max(), eje=eje)
+    # El tickformat lo pone la medida, asi que grafico() no tiene que adivinarlo
+    (fig.update_xaxes if horizontal else fig.update_yaxes)(tickformat=medida.tick)
     # key explicita: dos graficos con los mismos datos chocarian en el ID automatico
-    grafico(fig, key=f"barras_{columna}_{valor}", eje_moneda="x" if horizontal else "y")
+    grafico(fig, key=f"barras_{columna}_{valor}", eje_moneda=None)
     if top and total_categorias > top:
         st.caption(f"Top {top} de {total_categorias}")
 
