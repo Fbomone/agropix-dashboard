@@ -9,7 +9,7 @@ from utils.format import (
 )
 from utils.ui import (
     aviso_sin_datos, barras_por, columna_moneda, espacio_para_etiquetas, grafico, hay_datos,
-    leyenda_estados, metricas, tarjetas_kpi,
+    leyenda_estados, metricas, selector_medida, tarjetas_kpi,
 )
 
 COLOR = COLORES_UNIDAD[SERVICIO]
@@ -41,21 +41,31 @@ if aviso_sin_datos(s, que="trabajos"):
     st.stop()
 
 st.divider()
+
+# Los cuatro cortes de abajo se pueden leer en plata o en superficie. No dan el
+# mismo orden: el cliente que mas factura no es necesariamente el que mas
+# hectareas deja —un ensayo caro en pocas has contra una pulverizacion grande a
+# tarifa baja—, y esa diferencia es justamente la que vale la pena ver.
+medida = selector_medida("medida_servicios")
+st.caption(f"Los cuatro gráficos de abajo se miden en **{medida.etiqueta}**. "
+           "Cambiando la unidad cambia el orden: el que más factura no siempre es "
+           "el que más superficie aporta.")
+
 g1, g2 = st.columns(2)
 with g1:
     st.subheader("Por producto / servicio")
-    barras_por(s, "servicio", color=COLOR)
+    barras_por(s, "servicio", medida, color=COLOR)
 with g2:
     st.subheader("Por trabajo")
-    barras_por(s, "trabajo", horizontal=True, top=15, color=COLOR)
+    barras_por(s, "trabajo", medida, horizontal=True, top=15, color=COLOR)
 
 g3, g4 = st.columns(2)
 with g3:
     st.subheader("Por cultivo")
-    barras_por(s, "cultivo", horizontal=True, top=15, color=COLOR)
+    barras_por(s, "cultivo", medida, horizontal=True, top=15, color=COLOR)
 with g4:
     st.subheader("Top clientes")
-    barras_por(s, "cliente", horizontal=True, top=15, color=COLOR)
+    barras_por(s, "cliente", medida, horizontal=True, top=15, color=COLOR)
 
 # ---------------------------------------------------------------------------
 # B) Analisis por operador

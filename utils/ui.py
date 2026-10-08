@@ -6,8 +6,8 @@ import plotly.express as px
 import streamlit as st
 
 from utils.format import (
-    ALTO_GRAFICO, AMBAR, AZUL, ETIQUETA_MONEDA, FORMATO_MONEDA_TABLA, GRADIENTES_KPI, GRIS,
-    HOVER_MONEDA, PLOTLY_TEMPLATE, SEPARADORES_PLOTLY, TICK_MONEDA, VERDE,
+    ALTO_GRAFICO, AMBAR, AZUL, FORMATO_MONEDA_TABLA, GRADIENTES_KPI, GRIS, MEDIDA_PLATA,
+    MEDIDAS, PLOTLY_TEMPLATE, SEPARADORES_PLOTLY, TICK_MONEDA, VERDE, Medida,
 )
 
 SIN_DATOS = "No hay datos para el período seleccionado"
@@ -89,10 +89,22 @@ def _cantidad_series(fig) -> int:
     return n
 
 
-def espacio_para_etiquetas(fig, maximo: float, eje: str = "x"):
-    """Deja aire despues de la barra mas larga para que la etiqueta 'outside' no se corte."""
+# Aire por caracter de la etiqueta, en fraccion del rango del eje. Sale de medir
+# el caso peor: una barra que ocupa todo el ancho con el rotulo mas largo al
+# lado. Plotly dibuja la etiqueta "outside" aunque no entre (cliponaxis=False),
+# y lo que sobra lo recorta el contenedor: el texto no se encoge, desaparece.
+AIRE_POR_CARACTER = 0.04
+
+
+def espacio_para_etiquetas(fig, maximo: float, eje: str = "x", caracteres: int = 6):
+    """Deja aire despues de la barra mas larga para que la etiqueta 'outside' no se corte.
+
+    `caracteres` es el largo estimado del rotulo: "$193k" son 5 y "6,46k ha"
+    son 8. Con un factor fijo, agregarle un sufijo a la etiqueta corta el
+    sufijo, que es justo la parte que dice en que unidad esta el numero.
+    """
     if maximo and maximo > 0:
-        rango = [0, float(maximo) * 1.18]
+        rango = [0, float(maximo) * (1 + AIRE_POR_CARACTER * max(caracteres, 5))]
         fig.update_xaxes(range=rango) if eje == "x" else fig.update_yaxes(range=rango)
 
 
@@ -117,11 +129,24 @@ def grafico(fig, key: str, eje_moneda: str | None = "y", alto: int = ALTO_GRAFIC
     st.plotly_chart(fig, width="stretch", key=key, config={"displaylogo": False})
 
 
-def barras_por(df: pd.DataFrame, columna: str, valor: str = "monto", horizontal: bool = False,
-               top: int | None = None, color: str = VERDE):
-    """Suma `valor` por `columna`, de mayor a menor. Horizontal: el mayor queda arriba."""
-    if not hay_datos(df):
+def selector_medida(key: str, etiqueta: str = "Unidad de medida") -> Medida:
+    """Segmentado US$ / Hectareas. Devuelve la Medida elegida, plata por defecto.
+
+    Streamlit borra el estado de un widget al cambiar de pagina, asi que el
+    selector vuelve solo a US$ cuando se sale y se entra. Es lo que conviene:
+    el default tiene que ser siempre el mismo para que nadie lea hectareas
+    creyendo que lee plata.
+    """
+    elegida = st.segmented_control(etiqueta, list(MEDIDAS), default=list(MEDIDAS)[0], key=key)
+    return MEDIDAS.get(elegida or "", MEDIDA_PLATA)
+
+
+def barras_por(df: pd.DataFrame, columna: str, medida: Medida = MEDIDA_PLATA,
+               horizontal: bool = False, top: int | None = None, color: str = VERDE):
+    """Suma la medida por `columna`, de mayor a menor. Horizontal: el mayor queda arriba."""
+    if not hay_datos(df) or medida.columna not in df.columns:
         return
+    valor = medida.columna
     g = (
         df.assign(**{columna: df[columna].astype("string").fillna("Sin dato")})
         .groupby(columna, as_index=False)[valor].sum()
@@ -132,23 +157,30 @@ def barras_por(df: pd.DataFrame, columna: str, valor: str = "monto", horizontal:
     if top:
         g = g.head(top)
     if not hay_datos(g):
+        st.caption(f"Ningún registro tiene {medida.etiqueta.lower()} cargado en este período.")
         return
 
-    labels = {valor: "US$", columna: ""}
+    labels = {valor: medida.etiqueta, columna: ""}
+    eje = "x" if horizontal else "y"
     if horizontal:
         fig = px.bar(g, x=valor, y=columna, orientation="h", labels=labels)
         fig.update_yaxes(categoryorder="total ascending")
-        fig.update_traces(texttemplate=f"%{{x:{ETIQUETA_MONEDA}}}",
-                          hovertemplate=f"%{{y}}<br>%{{x:{HOVER_MONEDA}}}<extra></extra>")
+        fig.update_traces(
+            texttemplate=f"%{{x:{medida.texto}}}{medida.sufijo}",
+            hovertemplate=f"%{{y}}<br>%{{x:{medida.hover}}}{medida.sufijo}<extra></extra>")
     else:
         fig = px.bar(g, x=columna, y=valor, labels=labels)
         fig.update_xaxes(categoryorder="total descending")
-        fig.update_traces(texttemplate=f"%{{y:{ETIQUETA_MONEDA}}}",
-                          hovertemplate=f"%{{x}}<br>%{{y:{HOVER_MONEDA}}}<extra></extra>")
+        fig.update_traces(
+            texttemplate=f"%{{y:{medida.texto}}}{medida.sufijo}",
+            hovertemplate=f"%{{x}}<br>%{{y:{medida.hover}}}{medida.sufijo}<extra></extra>")
     fig.update_traces(marker_color=color, textposition="outside", cliponaxis=False)
-    espacio_para_etiquetas(fig, g[valor].max(), eje="x" if horizontal else "y")
+    # "$1,25M" son 6 caracteres; "1,25M ha", 8. El sufijo cambia cuanto aire hace falta
+    espacio_para_etiquetas(fig, g[valor].max(), eje=eje, caracteres=6 + len(medida.sufijo))
+    # El tickformat lo pone la medida, asi que grafico() no tiene que adivinarlo
+    (fig.update_xaxes if horizontal else fig.update_yaxes)(tickformat=medida.tick)
     # key explicita: dos graficos con los mismos datos chocarian en el ID automatico
-    grafico(fig, key=f"barras_{columna}_{valor}", eje_moneda="x" if horizontal else "y")
+    grafico(fig, key=f"barras_{columna}_{valor}", eje_moneda=None)
     if top and total_categorias > top:
         st.caption(f"Top {top} de {total_categorias}")
 
