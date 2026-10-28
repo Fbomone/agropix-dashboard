@@ -51,7 +51,6 @@ import streamlit as st
 # Configuracion
 # ---------------------------------------------------------------------------
 EMPRESA = "Agropix"
-CONTACTO_SOPORTE = "soporte@agropix.com"
 
 VERDE, AZUL, GRIS = "#2E7D32", "#1565C0", "#5F6B7A"
 
@@ -369,8 +368,6 @@ def _estilos() -> None:
         background: #EEF4FB; color: #123B66; font-size: .85rem; line-height: 1.45;
       }}
       .agpx-confidencial strong {{ letter-spacing: .04em; }}
-      .agpx-pie {{ text-align: center; color: {GRIS}; font-size: .8rem; margin-top: .5rem; }}
-      .agpx-pie a {{ color: {AZUL}; }}
     </style>
     """)
 
@@ -443,12 +440,6 @@ def login_page() -> None:
                     + (f" Te quedan {restantes} intento(s)." if 0 < restantes <= 2 else ""),
                     icon="🔒",
                 )
-
-        st.divider()
-        st.html(
-            f'<p class="agpx-pie">¿Problemas para entrar? Escribí a '
-            f'<a href="mailto:{CONTACTO_SOPORTE}">{CONTACTO_SOPORTE}</a></p>'
-        )
 
 
 def check_authentication() -> dict[str, str]:

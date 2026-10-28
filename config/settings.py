@@ -55,7 +55,7 @@ COHERE_API_KEY = _cfg("COHERE_API_KEY")
 # Link del boton "Ver reporte completo" en el mail semanal. Se cambia desde los
 # secrets si la app se redeploya con otro nombre, sin tocar codigo. El default es
 # la URL larga que asigna Streamlit Cloud, que no depende del nombre corto.
-URL_APP = _cfg("URL_APP", "https://agropix-dashboard-rlugsmactrmmzqtonnbqw9.streamlit.app/")
+URL_APP = _cfg("URL_APP", "https://agropix.streamlit.app/")
 
 # Reporte semanal: si el viernes de apertura entra junto con el de cierre.
 # Con True (lo pedido) el periodo dura 8 dias y el viernes aparece en DOS

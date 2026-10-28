@@ -322,7 +322,7 @@ def cuerpo_html(k: dict, desde: date, hasta: date, clientes: pd.DataFrame | None
   </p>
 
   <p style="color:#5D6D7E;font-size:12px;margin-top:20px">
-    Agropix · reporte generado automáticamente · soporte@agropix.com
+    Agropix · reporte generado automáticamente
   </p>
 </div>
 """
