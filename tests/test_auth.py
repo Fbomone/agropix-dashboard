@@ -360,3 +360,10 @@ def test_despues_del_logout_la_cookie_vieja_no_reabre_la_sesion(secrets, sesion,
     auth.cerrar_sesion("logout")
     assert sesion["auth_cookie_pendiente"] == ""  # el proximo run la borra del navegador
     assert auth.entrar_con_cookie() is False
+
+
+def test_si_el_servidor_no_ve_la_cookie_vale_la_que_leyo_el_navegador(secrets, sesion):
+    """Streamlit Cloud no siempre reenvia la cookie: la lee el JS del componente."""
+    sesion["auth_cookie_navegador"] = auth.crear_token("matias21tossen@gmail.com")
+    assert auth.entrar_con_cookie() is True
+    assert sesion["auth_email"] == "matias21tossen@gmail.com"
