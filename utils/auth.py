@@ -223,25 +223,64 @@ def verificar_token(token: str | None, ahora: datetime | None = None) -> dict[st
 
 
 def _cookie_del_navegador() -> str | None:
-    """La cookie "Recordarme" tal como llego al abrir la pagina.
+    """La cookie "Recordarme", vista desde el servidor o desde el navegador.
 
-    st.context.cookies se toma al conectar: no ve lo que el JS cambie despues
-    sin recargar, de ahi la marca auth_cookie_revocada en cerrar_sesion().
+    st.context.cookies es lo que llego al conectar, pero Streamlit Cloud no
+    siempre la reenvia: por eso tambien vale la que leyo el JS del componente.
+    Ninguna de las dos ve un logout sin recargar, de ahi la marca
+    auth_cookie_revocada en cerrar_sesion().
     """
     try:
         valor = st.context.cookies.get(COOKIE_SESION)
     except Exception:
-        return None
-    return valor if isinstance(valor, str) else None  # AppTest devuelve un mock
+        valor = None
+    if isinstance(valor, str) and valor:  # AppTest devuelve un mock
+        return valor
+    return st.session_state.get("auth_cookie_navegador") or None
 
 
-def _js_cookie(valor: str, segundos: int) -> None:
-    """Escribe (o borra, con segundos=0) la cookie desde el navegador."""
-    st.html(
-        f"<script>document.cookie = '{COOKIE_SESION}={valor}; max-age={segundos}; "
-        f"path=/; SameSite=Lax; Secure';</script>",
-        unsafe_allow_javascript=True,
-    )
+# Lee y escribe la cookie en el navegador y le devuelve a Python lo que hay.
+# window.__agpxCookie evita mandar el mismo valor en cada rerun (seria un loop).
+_JS_COOKIE = """
+export default function (component) {
+  const { data, setStateValue } = component;
+  const nombre = data.nombre;
+  if (typeof data.escribir === "string") {
+    const vida = data.escribir ? data.segundos : 0;
+    document.cookie = `${nombre}=${data.escribir}; max-age=${vida}; path=/; SameSite=Lax; Secure`;
+  }
+  const par = document.cookie.split("; ").find((c) => c.startsWith(nombre + "="));
+  const valor = par ? par.slice(nombre.length + 1) : "";
+  if (window.__agpxCookie !== valor) {
+    window.__agpxCookie = valor;
+    setStateValue("valor", valor);
+  }
+}
+"""
+
+
+def _sincronizar_cookie() -> None:
+    """Monta el componente de la cookie y guarda en la sesion lo que leyo.
+
+    Graba (token) o borra ("") la cookie que dejo pendiente el login o el
+    logout. Se monta en cada run, con key fija, para que su estado persista.
+    """
+    pendiente = st.session_state.pop("auth_cookie_pendiente", None)
+    try:
+        componente = st.components.v2.component("agpx_cookie", js=_JS_COOKIE)
+        resultado = componente(
+            key="agpx_cookie",
+            data={"nombre": COOKIE_SESION, "escribir": pendiente,
+                  "segundos": int(DURACION_RECORDAR.total_seconds())},
+            default={"valor": None},
+            on_valor_change=lambda: None,
+        )
+        valor = getattr(resultado, "valor", None)
+    except Exception:
+        _logger.exception("no se pudo montar el componente de la cookie")
+        return
+    if isinstance(valor, str):
+        st.session_state["auth_cookie_navegador"] = valor
 
 
 # ---------------------------------------------------------------------------
@@ -451,18 +490,11 @@ def check_authentication() -> dict[str, str]:
         usuario = check_authentication()
         st.caption(f"Bienvenido: {usuario['email']}")
     """
-    _escribir_cookie_pendiente()
+    _sincronizar_cookie()
     if not sesion_valida() and not entrar_con_cookie():
         login_page()
         st.stop()
     return usuario_actual()  # type: ignore[return-value]
-
-
-def _escribir_cookie_pendiente() -> None:
-    """Graba (token) o borra ("") la cookie que dejo el login o el logout."""
-    pendiente = st.session_state.pop("auth_cookie_pendiente", None)
-    if pendiente is not None:
-        _js_cookie(pendiente, int(DURACION_RECORDAR.total_seconds()) if pendiente else 0)
 
 
 def logout_button() -> None:
