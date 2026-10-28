@@ -202,6 +202,7 @@ _CSS_TARJETAS = """
   .agpx-kpi {{
     border-radius: 12px; padding: .9rem 1rem; color: #FFFFFF;
     box-shadow: 0 2px 8px rgba(16,24,40,.12); min-width: 0;
+    container-type: inline-size;          /* el valor se mide contra la tarjeta */
   }}
   .agpx-kpi .agpx-kpi-label {{
     font-size: .78rem; font-weight: 600; letter-spacing: .03em;
@@ -210,7 +211,9 @@ _CSS_TARJETAS = """
   .agpx-kpi .agpx-kpi-valor {{
     font-size: 1.4rem; font-weight: 700; line-height: 1.2; margin: .3rem 0 .1rem 0;
     font-variant-numeric: tabular-nums;   /* los montos alinean entre tarjetas */
-    overflow-wrap: anywhere;              /* un numero largo no desborda */
+    /* "US$ 1.300.763,00" siempre en una linea: en una tarjeta angosta se
+       achica la letra (cqi = 1% del ancho de la tarjeta) en vez de cortar */
+    white-space: nowrap; font-size: min(1.4rem, 11.5cqi);
   }}
   .agpx-kpi .agpx-kpi-nota {{ font-size: .75rem; opacity: .92; line-height: 1.3; }}
   /* Tablet: de a dos, que es lo que entra sin achicar el numero */
@@ -219,7 +222,7 @@ _CSS_TARJETAS = """
   }}
   @media (max-width: 480px) {{
     .agpx-kpis {{ grid-template-columns: 1fr; }}
-    .agpx-kpi .agpx-kpi-valor {{ font-size: 1.3rem; }}
+    .agpx-kpi .agpx-kpi-valor {{ font-size: min(1.3rem, 11.5cqi); }}
   }}
 </style>
 """

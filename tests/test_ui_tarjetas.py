@@ -77,7 +77,10 @@ def test_el_titulo_sigue_siendo_mas_chico_que_el_numero():
 
 def test_los_montos_alinean_entre_tarjetas():
     assert "tabular-nums" in ui._CSS_TARJETAS
-    assert "overflow-wrap: anywhere" in ui._CSS_TARJETAS, "un monto largo no debe desbordar"
+    # "US$" y el numero en la misma linea; un monto largo achica la letra, no desborda
+    assert "white-space: nowrap" in ui._CSS_TARJETAS
+    assert "container-type: inline-size" in ui._CSS_TARJETAS
+    assert re.search(r"font-size: min\([\d.]+rem, [\d.]+cqi\)", ui._CSS_TARJETAS)
 
 
 # ---------------------------------------------------------------------------
