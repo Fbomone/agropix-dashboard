@@ -305,3 +305,58 @@ def test_la_clave_comun_conserva_los_roles(monkeypatch):
     comun = auth.verificar_credenciales("matias21tossen@gmail.com", "AgropixEquipo2026")
     assert admin["rol"] == "admin"
     assert comun["rol"] == "usuario"
+
+
+# ---------------------------------------------------------------------------
+# Recordarme (cookie firmada)
+# ---------------------------------------------------------------------------
+def test_el_token_de_recordarme_devuelve_al_usuario(secrets):
+    token = auth.crear_token("Matias21Tossen@gmail.com ")
+    assert auth.verificar_token(token) == {"email": "matias21tossen@gmail.com",
+                                           "rol": "usuario"}
+
+
+def test_el_token_vence(secrets):
+    hace_un_mes = datetime.now() - auth.DURACION_RECORDAR - timedelta(minutes=1)
+    assert auth.verificar_token(auth.crear_token("matias21tossen@gmail.com", hace_un_mes)) is None
+
+
+def test_cambiar_la_contrasena_invalida_el_token(secrets, monkeypatch):
+    token = auth.crear_token("matias21tossen@gmail.com")
+    monkeypatch.setattr(auth, "_seccion_secrets",
+                        lambda _n: {**SECRETS_FALSOS, "matias21tossen_gmail_com": "otra"})
+    assert auth.verificar_token(token) is None
+
+
+def test_un_token_adulterado_no_entra(secrets):
+    import base64
+    token = auth.crear_token("matias21tossen@gmail.com")
+    _, vence, firma = base64.urlsafe_b64decode(token).decode().split("|")
+    # Mismo vencimiento y firma, pero haciendose pasar por un admin
+    falso = base64.urlsafe_b64encode(f"francobomone14@gmail.com|{vence}|{firma}".encode()).decode()
+    assert auth.verificar_token(falso) is None
+
+
+@pytest.mark.parametrize("token", [None, "", "basura", "bm8tc2VwYXJhZG9y", "%%%"])
+def test_tokens_mal_formados(secrets, token):
+    assert auth.verificar_token(token) is None
+
+
+def test_sin_usuario_autorizado_no_hay_token(secrets):
+    assert auth.crear_token("intruso@gmail.com") is None
+
+
+def test_la_cookie_abre_la_sesion(secrets, sesion, monkeypatch):
+    token = auth.crear_token("francobomone14@gmail.com")
+    monkeypatch.setattr(auth, "_cookie_del_navegador", lambda: token)
+    assert auth.entrar_con_cookie() is True
+    assert sesion["auth_ok"] is True and sesion["auth_rol"] == "admin"
+
+
+def test_despues_del_logout_la_cookie_vieja_no_reabre_la_sesion(secrets, sesion, monkeypatch):
+    token = auth.crear_token("francobomone14@gmail.com")
+    monkeypatch.setattr(auth, "_cookie_del_navegador", lambda: token)
+    auth.entrar_con_cookie()
+    auth.cerrar_sesion("logout")
+    assert sesion["auth_cookie_pendiente"] == ""  # el proximo run la borra del navegador
+    assert auth.entrar_con_cookie() is False

@@ -35,7 +35,7 @@ CUERPO_HTML = """\
     Información de facturación de Agropix. No reenviar ni redistribuir.
   </div>
   <p style="color:#5F6B7A;font-size:12px;margin-top:1.25rem">
-    Generado automáticamente el {momento} · soporte@agropix.com
+    Generado automáticamente el {momento}
   </p>
 </div>
 """

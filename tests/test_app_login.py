@@ -70,7 +70,7 @@ def test_el_aviso_confidencial_esta_en_la_pantalla(app):
     app.run()
     html = " ".join(b.body for b in app.get("html"))
     assert "CONFIDENCIAL" in html
-    assert auth.CONTACTO_SOPORTE in html
+    assert "soporte" not in html  # la casilla no existe: se saco el pie
 
 
 def test_login_valido_abre_la_sesion(monkeypatch, secrets):

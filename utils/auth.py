@@ -26,13 +26,18 @@ conviene reusar en Agropix una contrasena personal de otro servicio.
 Otras decisiones
 ----------------
 - La sesion vive en st.session_state: es por pestania del navegador y muere al
-  cerrarla o al refrescar. No se emiten cookies ni tokens persistentes.
+  cerrarla o al refrescar. Para no pedir la contrasena cada vez, el login deja
+  (si se tilda "Recordarme") una cookie firmada que dura DURACION_RECORDAR y
+  rearma la sesion al volver a abrir el link. La firma usa la contrasena del
+  usuario: cambiar AUTH_PASSWORD (o la propia) invalida todas sus cookies.
 - HTTPS lo provee Streamlit Cloud; este modulo asume transporte cifrado.
 
 El modulo no importa nada del proyecto: se puede copiar a otra app Streamlit.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import hmac
 import logging
 import os
@@ -46,13 +51,15 @@ import streamlit as st
 # Configuracion
 # ---------------------------------------------------------------------------
 EMPRESA = "Agropix"
-CONTACTO_SOPORTE = "soporte@agropix.com"
 
 VERDE, AZUL, GRIS = "#2E7D32", "#1565C0", "#5F6B7A"
 
 TIMEOUT_SESION = timedelta(minutes=30)   # inactividad tolerada antes del logout
 MAX_INTENTOS = 5                         # intentos fallidos antes del bloqueo
 BLOQUEO = timedelta(minutes=5)           # duracion del bloqueo por fuerza bruta
+
+COOKIE_SESION = "agpx_sesion"            # "Recordarme": evita reloguearse en cada visita
+DURACION_RECORDAR = timedelta(days=30)
 
 ARCHIVO_AUDITORIA = Path(os.getenv("AGROPIX_AUDIT_LOG", "data/auditoria.log"))
 
@@ -177,6 +184,67 @@ def verificar_credenciales(email: str, password: str) -> dict[str, str] | None:
 
 
 # ---------------------------------------------------------------------------
+# Recordarme (cookie firmada)
+# ---------------------------------------------------------------------------
+def _firma(email: str, vence: int, clave: str) -> str:
+    return hmac.new(clave.encode("utf-8"), f"{email}|{vence}".encode("utf-8"),
+                    hashlib.sha256).hexdigest()
+
+
+def crear_token(email: str, ahora: datetime | None = None) -> str | None:
+    """Valor de la cookie "Recordarme" para email, o None si no esta autorizado.
+
+    Es "email|vencimiento|firma" en base64url (sin caracteres raros para una
+    cookie). La firma va con la contrasena vigente del usuario.
+    """
+    limpio = normalizar_email(email)
+    clave = cargar_usuarios().get(limpio)
+    if not clave:
+        return None
+    vence = int(((ahora or datetime.now()) + DURACION_RECORDAR).timestamp())
+    crudo = f"{limpio}|{vence}|{_firma(limpio, vence, clave)}"
+    return base64.urlsafe_b64encode(crudo.encode("utf-8")).decode("ascii")
+
+
+def verificar_token(token: str | None, ahora: datetime | None = None) -> dict[str, str] | None:
+    """Datos del usuario si la cookie es valida y no vencio, sino None."""
+    try:
+        email, vence_txt, firma = base64.urlsafe_b64decode(
+            (token or "").encode("ascii")).decode("utf-8").split("|")
+        vence = int(vence_txt)
+    except (ValueError, UnicodeError):
+        return None
+    if vence < (ahora or datetime.now()).timestamp():
+        return None
+    clave = cargar_usuarios().get(email)
+    if not clave or not hmac.compare_digest(firma, _firma(email, vence, clave)):
+        return None
+    return {"email": email, "rol": "admin" if es_admin(email) else "usuario"}
+
+
+def _cookie_del_navegador() -> str | None:
+    """La cookie "Recordarme" tal como llego al abrir la pagina.
+
+    st.context.cookies se toma al conectar: no ve lo que el JS cambie despues
+    sin recargar, de ahi la marca auth_cookie_revocada en cerrar_sesion().
+    """
+    try:
+        valor = st.context.cookies.get(COOKIE_SESION)
+    except Exception:
+        return None
+    return valor if isinstance(valor, str) else None  # AppTest devuelve un mock
+
+
+def _js_cookie(valor: str, segundos: int) -> None:
+    """Escribe (o borra, con segundos=0) la cookie desde el navegador."""
+    st.html(
+        f"<script>document.cookie = '{COOKIE_SESION}={valor}; max-age={segundos}; "
+        f"path=/; SameSite=Lax; Secure';</script>",
+        unsafe_allow_javascript=True,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Estado de la sesion
 # ---------------------------------------------------------------------------
 CLAVES_SESION = ("auth_ok", "auth_email", "auth_rol", "auth_inicio", "auth_ultimo_uso")
@@ -197,6 +265,11 @@ def cerrar_sesion(motivo: str = "logout") -> None:
         audit_log(f"sesion_cerrada_{motivo}", email)
     for clave in CLAVES_SESION + CLAVES_DATOS:
         st.session_state.pop(clave, None)
+    if motivo == "logout":
+        # Salir a mano tambien olvida el equipo: se borra la cookie y, como
+        # st.context.cookies la sigue viendo hasta recargar, se ignora aca
+        st.session_state["auth_cookie_revocada"] = True
+        st.session_state["auth_cookie_pendiente"] = ""
 
 
 def sesion_valida() -> bool:
@@ -213,6 +286,31 @@ def sesion_valida() -> bool:
         st.session_state["auth_aviso_timeout"] = True
         return False
     st.session_state["auth_ultimo_uso"] = datetime.now()  # actividad: renueva el plazo
+    return True
+
+
+def _abrir_sesion(usuario: dict[str, str]) -> None:
+    ahora = datetime.now()
+    st.session_state.update(
+        auth_ok=True,
+        auth_email=usuario["email"],
+        auth_rol=usuario["rol"],
+        auth_inicio=ahora,
+        auth_ultimo_uso=ahora,
+        auth_intentos=0,
+    )
+
+
+def entrar_con_cookie() -> bool:
+    """Abre la sesion desde la cookie "Recordarme" si es valida. True si entro."""
+    if st.session_state.get("auth_cookie_revocada"):
+        return False
+    usuario = verificar_token(_cookie_del_navegador())
+    if not usuario:
+        return False
+    _abrir_sesion(usuario)
+    st.session_state.pop("auth_aviso_timeout", None)
+    audit_log("login_cookie", usuario["email"], usuario["rol"])
     return True
 
 
@@ -270,8 +368,6 @@ def _estilos() -> None:
         background: #EEF4FB; color: #123B66; font-size: .85rem; line-height: 1.45;
       }}
       .agpx-confidencial strong {{ letter-spacing: .04em; }}
-      .agpx-pie {{ text-align: center; color: {GRIS}; font-size: .8rem; margin-top: .5rem; }}
-      .agpx-pie a {{ color: {AZUL}; }}
     </style>
     """)
 
@@ -313,6 +409,10 @@ def login_page() -> None:
         with st.form("agpx_login"):
             email = st.text_input("Email", placeholder="tu-email@gmail.com")
             password = st.text_input("Contraseña", type="password")
+            recordar = st.checkbox(
+                f"Recordarme en este equipo ({DURACION_RECORDAR.days} días)", value=True,
+                help="Destildalo en una computadora compartida.",
+            )
             enviar = st.form_submit_button("Ingresar", type="primary", width="stretch")
 
         if enviar:
@@ -324,15 +424,11 @@ def login_page() -> None:
                     icon="🚫",
                 )
             elif usuario := verificar_credenciales(email, password):
-                ahora = datetime.now()
-                st.session_state.update(
-                    auth_ok=True,
-                    auth_email=usuario["email"],
-                    auth_rol=usuario["rol"],
-                    auth_inicio=ahora,
-                    auth_ultimo_uso=ahora,
-                    auth_intentos=0,
-                )
+                _abrir_sesion(usuario)
+                st.session_state.pop("auth_cookie_revocada", None)
+                if recordar:
+                    # Se escribe en el proximo run: st.rerun() cortaria este
+                    st.session_state["auth_cookie_pendiente"] = crear_token(usuario["email"])
                 audit_log("login_ok", usuario["email"], usuario["rol"])
                 st.balloons()
                 st.rerun()
@@ -345,12 +441,6 @@ def login_page() -> None:
                     icon="🔒",
                 )
 
-        st.divider()
-        st.html(
-            f'<p class="agpx-pie">¿Problemas para entrar? Escribí a '
-            f'<a href="mailto:{CONTACTO_SOPORTE}">{CONTACTO_SOPORTE}</a></p>'
-        )
-
 
 def check_authentication() -> dict[str, str]:
     """Portero de la app: muestra el login y corta la ejecucion si no hay sesion valida.
@@ -361,10 +451,18 @@ def check_authentication() -> dict[str, str]:
         usuario = check_authentication()
         st.caption(f"Bienvenido: {usuario['email']}")
     """
-    if not sesion_valida():
+    _escribir_cookie_pendiente()
+    if not sesion_valida() and not entrar_con_cookie():
         login_page()
         st.stop()
     return usuario_actual()  # type: ignore[return-value]
+
+
+def _escribir_cookie_pendiente() -> None:
+    """Graba (token) o borra ("") la cookie que dejo el login o el logout."""
+    pendiente = st.session_state.pop("auth_cookie_pendiente", None)
+    if pendiente is not None:
+        _js_cookie(pendiente, int(DURACION_RECORDAR.total_seconds()) if pendiente else 0)
 
 
 def logout_button() -> None:

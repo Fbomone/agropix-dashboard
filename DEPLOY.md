@@ -79,7 +79,9 @@ contraseñas, para pegar y completar.
 
 | Sí | No |
 |----|----|
-| Sesión de 30 min de inactividad, con logout automático | No hay recuperación de contraseña por mail |
+| "Recordarme" (tildado por defecto): cookie firmada de 30 días, al abrir el link entra directo | La cookie no es HttpOnly (la escribe JS); quien copie la cookie entra hasta que venza |
+| Cambiar `AUTH_PASSWORD` (o la clave propia) invalida todas las cookies de ese usuario | Sin "Recordarme", sesión de 30 min de inactividad y se pierde al refrescar |
+| **Cerrar sesión** borra la cookie de ese equipo | No hay recuperación de contraseña por mail |
 | Bloqueo 5 min tras 5 intentos fallidos (por sesión) | El bloqueo es por sesión de navegador, no por IP |
 | Log de accesos (`login_ok`, `login_fallido`, `bloqueo`, cierres) | No hay 2FA |
 | Borra `datos`/`datos_completos`/`_pdf` de la sesión al salir | No hay roles ni permisos: los 3 usuarios ven lo mismo |
