@@ -182,9 +182,11 @@ def test_sesion_sin_marca_de_tiempo_se_descarta(sesion):
 def test_logout_borra_los_datos_del_cliente(sesion):
     sesion.update(auth_ok=True, auth_email="francobomone14@gmail.com",
                   auth_ultimo_uso=datetime.now(),
-                  datos={"ventas": 1}, datos_completos={"ventas": 1}, _pdf={"bytes": b"x"})
+                  datos={"ventas": 1}, datos_completos={"ventas": 1}, _pdf={"bytes": b"x"},
+                  chat_mensajes=[{"role": "user", "content": "¿Cuánto ingresó?"}])
     auth.cerrar_sesion()
     assert not any(c in sesion for c in auth.CLAVES_SESION + auth.CLAVES_DATOS)
+    assert "chat_mensajes" not in sesion
 
 
 def test_bloqueo_tras_cinco_intentos_fallidos(sesion):

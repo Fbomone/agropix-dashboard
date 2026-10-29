@@ -29,7 +29,33 @@
 - [x] Reporte semanal automático: GitHub Actions lunes 8:00 ART (ver DEPLOY.md)
 - [ ] Mobile: solo las tarjetas de KPI son responsive; faltan gráficos, tablas
       y modo oscuro
-- [ ] Chat con IA (fase 2)
+- [x] Chat con IA (fase 2): página "Asistente IA" con Groq (plan gratis).
+      Spec en docs/ASISTENTE_IA.md, carga de la key en DEPLOY.md
+- [ ] Chat con IA fase 2.1 (opcional): popover "💬 Preguntar" en el Reporte General
+
+## Asistente IA — decisiones
+- El LLM nunca ve las planillas ni calcula: elige una herramienta de
+  utils/herramientas_chat.py, que reutiliza las funciones de data.py y
+  comisiones.py, y redacta con el resultado agregado. Mismos números que las tarjetas
+- El chat solo LEE los datos de la sesión: no modifica `datos` ni
+  `datos_completos`, no relee Sheets ni toca la caché (hay tests que lo verifican)
+- Sin fechas en la pregunta usa el período y los estados del filtro; con fechas
+  aplica aplicar_filtros sobre los datos completos con los estados actuales
+- Si el modelo da solo `desde` (o solo `hasta`), el otro extremo es la primera
+  (o última) fecha con datos
+- pendientes_de_cobro toma servicios con estado "Por cobrar", como pide la spec.
+  Con el filtro por defecto coincide con la tarjeta; si se tildan estados que no
+  son venta (presupuesto, consulta…), la tarjeta los suma como por cobrar y el
+  chat no
+- buscar_cliente busca dentro del período de pantalla
+- Porcentajes como fracción con 4 decimales (0.8734); montos con 2
+- Historial: viajan los últimos 6 mensajes (3 preguntas + 3 respuestas), solo el
+  texto. Las respuestas que fueron error no se reenvían
+- Límite diario por usuario en memoria (`st.cache_resource`), día en hora
+  argentina. Se reinicia si se reinicia la app. Las preguntas que fallan
+  (429, timeout) no descuentan. Admins sin límite
+- El historial del chat se borra al cerrar sesión o por timeout (CLAVES_DATOS)
+- Auditoría `chat_pregunta`: herramientas y modelo, nunca el texto
 
 ## Setup local
 - Python 3.14, venv en /venv

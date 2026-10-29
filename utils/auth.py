@@ -289,7 +289,7 @@ def _sincronizar_cookie() -> None:
 CLAVES_SESION = ("auth_ok", "auth_email", "auth_rol", "auth_inicio", "auth_ultimo_uso")
 
 # Datos del cliente cacheados en la sesion: no deben sobrevivir al logout
-CLAVES_DATOS = ("datos", "datos_completos", "_pdf")
+CLAVES_DATOS = ("datos", "datos_completos", "_pdf", "chat_mensajes")
 
 
 def _minutos_restantes() -> int:
