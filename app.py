@@ -53,6 +53,7 @@ lista_paginas = [
     st.Page("paginas/1_Reporte_General.py", title="Reporte General", icon="📊", default=True),
     st.Page("paginas/2_Venta_Servicios.py", title="Venta de Servicios", icon="🚜"),
     st.Page("paginas/3_Venta_Equipos.py", title="Venta de Equipos", icon="🛸"),
+    st.Page("paginas/5_Asistente.py", title="Asistente IA", icon="💬"),
     pagina_config,
 ]
 # El panel de administracion solo se declara para admins: una pagina que no esta

@@ -84,7 +84,7 @@ contraseñas, para pegar y completar.
 | **Cerrar sesión** borra la cookie de ese equipo | No hay recuperación de contraseña por mail |
 | Bloqueo 5 min tras 5 intentos fallidos (por sesión) | El bloqueo es por sesión de navegador, no por IP |
 | Log de accesos (`login_ok`, `login_fallido`, `bloqueo`, cierres) | No hay 2FA |
-| Borra `datos`/`datos_completos`/`_pdf` de la sesión al salir | No hay roles ni permisos: los 3 usuarios ven lo mismo |
+| Borra `datos`/`datos_completos`/`_pdf` y el historial del chat de la sesión al salir | No hay roles ni permisos: los 3 usuarios ven lo mismo |
 
 **Auditoría:** `audit_log()` escribe al logger estándar (visible en *Manage app →
 Logs* de Streamlit Cloud) y, si el disco es escribible, a `data/auditoria.log`.
@@ -139,6 +139,7 @@ HTTPS lo pone Streamlit; no hay nada que configurar.
 - [ ] Logout → vuelve al login y los filtros se resetean.
 - [ ] **Exportar reporte PDF** → ver punto 5.
 - [ ] *Manage app → Logs*: aparecen las líneas `AUDIT ... login_ok ...`.
+- [ ] **Asistente IA** → ver punto 9.
 
 ---
 
@@ -258,7 +259,7 @@ no se distingue de un envío que falló.
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                                    # 194 tests, ninguno se saltea
+pytest                                    # 461 tests, ninguno se saltea
 
 # Incluyendo los que necesitan las contraseñas reales:
 AGROPIX_TEST_PASS_DUENO='...' AGROPIX_TEST_PASS_GERENTE='...' \
@@ -272,3 +273,68 @@ Los tests no usan las contraseñas reales: arman su propio `[auth_users]` de
 mentira. Verificado además contra los secrets y los Sheets reales en local: los
 3 usuarios entran, el dashboard carga 11 KPIs y 2 tablas, y el logout vuelve al
 login limpiando los datos de la sesión.
+
+Los tests del Asistente IA (`test_herramientas_chat.py`, `test_agente.py`,
+`test_pagina_asistente.py`) usan un cliente de Groq falso: no gastan cuota.
+
+---
+
+## 9. Asistente IA (Groq)
+
+Página **Asistente IA** (💬): chat en lenguaje natural sobre los datos del
+dashboard. Usa el plan **gratuito** de Groq. El modelo nunca recibe las
+planillas: elige una herramienta de `utils/herramientas_chat.py`, que calcula con
+las mismas funciones de las tarjetas, y redacta con ese resultado agregado. El
+chat solo lee los datos de la sesión, no los modifica. Especificación completa
+en `docs/ASISTENTE_IA.md`.
+
+### Cargar la key en Streamlit Cloud
+
+1. Crear la key en <https://console.groq.com/keys> (cuenta gratis, sin tarjeta).
+2. share.streamlit.io → la app → **Settings → Secrets**. Agregar el bloque, sin
+   borrar lo que ya está cargado:
+
+   ```toml
+   GROQ_API_KEY = "gsk_..."
+   GROQ_MODEL = "openai/gpt-oss-120b"
+   GROQ_MODEL_RESPALDO = "llama-3.3-70b-versatile"
+   CHAT_LIMITE_DIARIO = 30
+   ```
+
+3. **Pegarlo arriba de todo, antes de cualquier `[sección]`** (por ejemplo
+   `[gcp_service_account]` o `[smtp]`). En TOML, lo que queda debajo de un
+   encabezado pasa a ser parte de esa sección: la app no encuentra la key y la
+   página dice que el asistente no está configurado.
+4. Guardar. Tiene efecto sin redeploy, igual que cambiar `GROQ_MODEL`.
+
+En local es lo mismo en `.streamlit/secrets.toml`. Sin la key, la página del
+asistente muestra cómo configurarla y el resto del dashboard funciona igual.
+
+`requirements.txt` incluye `openai>=1.40`: Groq expone una API compatible con
+OpenAI, así que se usa ese cliente apuntando a `https://api.groq.com/openai/v1`.
+
+### Límites y costos
+
+- **Costo cero.** Si se agota la cuota gratuita de Groq (429), se reintenta una
+  vez con `GROQ_MODEL_RESPALDO` y, si sigue, el chat dice "alcanzó el límite
+  gratuito, probá en un minuto".
+- `CHAT_LIMITE_DIARIO` preguntas por usuario por día (hora argentina). Los admins
+  no tienen límite. El contador vive en memoria: un reinicio de la app lo pone en
+  cero. Las preguntas que terminan en error no descuentan.
+- Si Groq da de baja un modelo, se cambia `GROQ_MODEL` en los secrets.
+
+### Privacidad
+
+- A Groq solo viajan resultados agregados (totales, rankings de hasta 15 filas)
+  y la pregunta del usuario. Nunca filas crudas de las planillas.
+- La auditoría registra `chat_pregunta` con el usuario, las herramientas usadas
+  y el modelo. **No** guarda el texto de la pregunta ni de la respuesta.
+- El historial del chat vive en la sesión y se borra al cerrar sesión.
+
+### Verificar después del deploy
+
+- [ ] La página **Asistente IA** aparece en la navegación después de "Venta de Equipos".
+- [ ] "¿Cuánto ingresó Agropix en el período?" da el mismo número que la tarjeta
+      **INGRESOS** del Reporte General con los mismos filtros.
+- [ ] "🔎 Cómo lo calculé" muestra la herramienta usada (`kpis_generales`).
+- [ ] *Manage app → Logs*: aparecen líneas `AUDIT ... chat_pregunta ...`.
