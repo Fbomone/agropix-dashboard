@@ -69,17 +69,19 @@ jobs:
           python-version: "3.13"
           cache: pip
 
-      # kaleido necesita un navegador para exportar los gráficos de Plotly a PNG
-      - name: Instalar Chromium
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends chromium-browser || \
-            sudo apt-get install -y --no-install-recommends chromium
-
       - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      # El runner ubuntu-latest ya trae Google Chrome, y kaleido lo usa tal cual.
+      # Antes se instalaba chromium por apt, pero en Ubuntu 24.04 eso pasa por
+      # Snap y el 10/11/2026 la descarga se colgo mas de 15 minutos. Si Chrome
+      # faltara, kaleido lo baja directo (sin Snap). Va despues de instalar
+      # dependencias porque necesita kaleido.
+      - name: Verificar Chrome
+        run: |
+          google-chrome --version || python -c "import kaleido; kaleido.get_chrome_sync()"
 
       - name: Escribir credenciales de Google
         env:
