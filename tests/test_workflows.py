@@ -170,7 +170,32 @@ def test_no_quedaron_los_workflows_viejos():
 
 def test_no_hay_workflows_de_mas():
     presentes = {f.name for f in WORKFLOWS.glob("*.yml")}
-    assert presentes == {REUTILIZABLE, *LLAMADORES}
+    assert presentes == {REUTILIZABLE, *LLAMADORES, DESPIERTA}
+
+
+# ---------------------------------------------------------------------------
+# Mantener la app despierta (reclamo de Matias del 02/11/2026)
+# ---------------------------------------------------------------------------
+DESPIERTA = "mantener_despierta.yml"
+
+
+def test_la_app_se_visita_sola_y_tambien_a_mano():
+    on = cargar(DESPIERTA)[ON]
+    assert "schedule" in on and "workflow_dispatch" in on
+
+
+def test_la_visita_es_mas_frecuente_que_el_sueno_de_streamlit():
+    """Streamlit duerme a las ~12 h; cada 4 h deja margen para dos cron perdidos."""
+    cron = cargar(DESPIERTA)[ON]["schedule"][0]["cron"]
+    horas = cron.split()[1]
+    assert horas.startswith("*/"), f"cron inesperado: {cron}"
+    assert int(horas[2:]) <= 4
+
+
+def test_mantener_despierta_no_toca_secrets():
+    """Solo abre el login: no tiene por que ver credenciales ni mandar mails."""
+    texto = (WORKFLOWS / DESPIERTA).read_text(encoding="utf-8")
+    assert "secrets." not in texto
 
 
 def test_los_nombres_se_leen_en_orden_en_la_pantalla_de_actions():
