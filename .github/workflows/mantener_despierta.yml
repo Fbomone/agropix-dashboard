@@ -1,0 +1,44 @@
+name: 0 · Mantener la app despierta
+
+# Streamlit Community Cloud duerme la app tras ~12 horas sin visitas, y
+# despertarla tarda unos 5 minutos (en Safari, ademas, la pantalla de "waking
+# up" se traba). Este workflow la visita con un navegador cada 4 horas para que
+# nunca llegue a dormirse. Si la encuentra dormida, aprieta el boton y espera.
+#
+# No usa ningun secret ni manda mails: solo abre la pagina de login.
+#
+# Notas:
+#  - Los cron solo corren desde la rama por defecto: hasta que esto no este en
+#    main, no hace nada.
+#  - El cron de GitHub se atrasa y a veces saltea una corrida. Con 4 horas de
+#    intervalo hay margen para perder dos seguidas sin que la app se duerma.
+#  - Costo: ~2 minutos por corrida, ~360 min/mes de los 2000 gratis del plan.
+on:
+  schedule:
+    - cron: "23 */4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: mantener-despierta
+  cancel-in-progress: false
+
+jobs:
+  visitar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Instalar Playwright
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Visitar la app
+        run: python scripts/despertar_app.py

@@ -200,6 +200,51 @@ def test_bloqueo_tras_cinco_intentos_fallidos(sesion):
 
 
 # ---------------------------------------------------------------------------
+# Bloqueo global: no se esquiva abriendo pestanias nuevas (app publica)
+# ---------------------------------------------------------------------------
+def test_el_bloqueo_global_suma_fallos_de_distintas_sesiones():
+    contador = auth._IntentosGlobales()
+    ahora = datetime(2026, 11, 20, 10, 0)
+    for i in range(auth.MAX_INTENTOS_GLOBAL - 1):
+        contador.registrar("matias21tossen@gmail.com", ahora + timedelta(seconds=i))
+    assert contador.bloqueado_hasta("matias21tossen@gmail.com", ahora) is None
+    contador.registrar("matias21tossen@gmail.com", ahora + timedelta(seconds=30))
+    assert contador.bloqueado_hasta("matias21tossen@gmail.com", ahora + timedelta(seconds=31))
+
+
+def test_el_bloqueo_global_vence_solo():
+    contador = auth._IntentosGlobales()
+    ahora = datetime(2026, 11, 20, 10, 0)
+    for _ in range(auth.MAX_INTENTOS_GLOBAL):
+        contador.registrar("matias21tossen@gmail.com", ahora)
+    assert contador.bloqueado_hasta("matias21tossen@gmail.com", ahora + auth.BLOQUEO) is None
+
+
+def test_el_bloqueo_global_es_por_email():
+    contador = auth._IntentosGlobales()
+    for _ in range(auth.MAX_INTENTOS_GLOBAL):
+        contador.registrar("matias21tossen@gmail.com")
+    assert contador.bloqueado_hasta("matias21tossen@gmail.com")
+    assert contador.bloqueado_hasta("nicotobaldi55@gmail.com") is None
+
+
+def test_una_sesion_nueva_hereda_el_bloqueo_global(sesion, monkeypatch):
+    contador = auth._IntentosGlobales()
+    monkeypatch.setattr(auth, "_intentos_globales", lambda: contador)
+    for _ in range(auth.MAX_INTENTOS_GLOBAL):
+        auth._registrar_fallo("matias21tossen@gmail.com")
+        sesion.clear()  # cada intento desde una "pestania" nueva
+    assert auth._bloqueado("matias21tossen@gmail.com") is True
+
+
+def test_los_emails_inventados_no_ocupan_memoria(sesion, monkeypatch):
+    contador = auth._IntentosGlobales()
+    monkeypatch.setattr(auth, "_intentos_globales", lambda: contador)
+    auth._registrar_fallo("hackers@hack.com")
+    assert contador._fallos == {}
+
+
+# ---------------------------------------------------------------------------
 # Rol de administrador
 # ---------------------------------------------------------------------------
 def test_los_admins_son_los_declarados():

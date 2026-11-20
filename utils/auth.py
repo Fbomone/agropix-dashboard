@@ -41,6 +41,7 @@ import hashlib
 import hmac
 import logging
 import os
+import threading
 import unicodedata
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -57,6 +58,7 @@ VERDE, AZUL, GRIS = "#2E7D32", "#1565C0", "#5F6B7A"
 TIMEOUT_SESION = timedelta(minutes=30)   # inactividad tolerada antes del logout
 MAX_INTENTOS = 5                         # intentos fallidos antes del bloqueo
 BLOQUEO = timedelta(minutes=5)           # duracion del bloqueo por fuerza bruta
+MAX_INTENTOS_GLOBAL = 10                 # fallos por email sumando todas las sesiones
 
 COOKIE_SESION = "agpx_sesion"            # "Recordarme": evita reloguearse en cada visita
 DURACION_RECORDAR = timedelta(days=30)
@@ -367,13 +369,72 @@ def sesion_es_admin() -> bool:
     return bool(usuario) and usuario["rol"] == "admin"
 
 
-def _bloqueado() -> bool:
+class _IntentosGlobales:
+    """Fallos de login por email, compartidos por TODAS las sesiones del servidor.
+
+    El contador de st.session_state es por pestania: abrir una pestania nueva
+    lo pone en cero. Mientras la app era privada en Streamlit Cloud eso daba
+    igual; desde que es publica (02/11/2026) cualquiera llega al login, y sin
+    este contador podria probar contrasenas sin limite abriendo sesiones nuevas.
+
+    Vive en memoria del proceso (st.cache_resource): se pierde si la app se
+    reinicia, que es aceptable para frenar fuerza bruta.
+
+    Costo conocido: alguien que conozca el email de un usuario puede dejarlo
+    afuera BLOQUEO minutos fallando a proposito. Es preferible a no tener tope.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._fallos: dict[str, list[datetime]] = {}
+
+    def _vigentes(self, email: str, ahora: datetime) -> list[datetime]:
+        fallos = [f for f in self._fallos.get(email, []) if ahora - f < BLOQUEO]
+        if fallos:
+            self._fallos[email] = fallos
+        else:
+            self._fallos.pop(email, None)
+        return fallos
+
+    def registrar(self, email: str, ahora: datetime | None = None) -> int:
+        ahora = ahora or datetime.now()
+        with self._lock:
+            fallos = self._vigentes(email, ahora)
+            fallos.append(ahora)
+            self._fallos[email] = fallos
+            return len(fallos)
+
+    def bloqueado_hasta(self, email: str, ahora: datetime | None = None) -> datetime | None:
+        """Hasta cuando esta bloqueado el email, o None si puede intentar."""
+        ahora = ahora or datetime.now()
+        with self._lock:
+            fallos = self._vigentes(email, ahora)
+            if len(fallos) >= MAX_INTENTOS_GLOBAL:
+                return fallos[-1] + BLOQUEO
+            return None
+
+    def limpiar(self, email: str) -> None:
+        with self._lock:
+            self._fallos.pop(email, None)
+
+
+@st.cache_resource
+def _intentos_globales() -> _IntentosGlobales:
+    return _IntentosGlobales()
+
+
+def _bloqueado(email: str = "") -> bool:
     hasta = st.session_state.get("auth_bloqueo_hasta")
     if isinstance(hasta, datetime) and datetime.now() < hasta:
         return True
     if hasta:  # bloqueo vencido: se limpia el contador
         st.session_state.pop("auth_bloqueo_hasta", None)
         st.session_state["auth_intentos"] = 0
+    if email:
+        global_hasta = _intentos_globales().bloqueado_hasta(email)
+        if global_hasta:
+            st.session_state["auth_bloqueo_hasta"] = global_hasta
+            return True
     return False
 
 
@@ -384,6 +445,13 @@ def _registrar_fallo(email: str) -> None:
     if intentos >= MAX_INTENTOS:
         st.session_state["auth_bloqueo_hasta"] = datetime.now() + BLOQUEO
         audit_log("bloqueo_por_intentos", email or "-", f"{int(BLOQUEO.total_seconds() // 60)} min")
+    # Solo emails autorizados: con uno inventado no se entra igual, y asi la
+    # memoria no crece con lo que tipee un atacante
+    if email in EMAILS_AUTORIZADOS:
+        totales = _intentos_globales().registrar(email)
+        if totales == MAX_INTENTOS_GLOBAL:
+            audit_log("bloqueo_global", email,
+                      f"{totales} fallos entre todas las sesiones")
 
 
 # ---------------------------------------------------------------------------
@@ -455,7 +523,7 @@ def login_page() -> None:
             enviar = st.form_submit_button("Ingresar", type="primary", width="stretch")
 
         if enviar:
-            if _bloqueado():
+            if _bloqueado(normalizar_email(email)):
                 falta = st.session_state["auth_bloqueo_hasta"] - datetime.now()
                 st.error(
                     f"Demasiados intentos fallidos. Probá de nuevo en "
@@ -464,6 +532,7 @@ def login_page() -> None:
                 )
             elif usuario := verificar_credenciales(email, password):
                 _abrir_sesion(usuario)
+                _intentos_globales().limpiar(usuario["email"])
                 st.session_state.pop("auth_cookie_revocada", None)
                 if recordar:
                     # Se escribe en el proximo run: st.rerun() cortaria este
